@@ -61,3 +61,29 @@ def test_same_task_different_ip_flagged():
     result = analyze_networks(by_node)
     conflicts = [w for w in result["warnings"] if w["type"] == "task-ip-conflict"]
     assert conflicts and conflicts[0]["task"] == "web.1"
+
+
+def test_local_networks_ignored():
+    # Local-scope networks or known local drivers/names (like docker_gwbridge)
+    # should be skipped, even if they have duplicate IPs across nodes.
+    by_node = {
+        "n1": _view([
+            {"name": "docker_gwbridge", "scope": "local", "driver": "bridge", "subnet": "172.18.0.0/16", "endpoints": [
+                {"name": "gateway_aaa", "service": "gateway", "ipv4": "172.18.0.4"},
+            ]},
+            {"name": "host_net", "scope": "local", "driver": "host", "endpoints": [
+                {"name": "app_web", "service": "web", "ipv4": "127.0.0.1"},
+            ]}
+        ]),
+        "n2": _view([
+            {"name": "docker_gwbridge", "scope": "local", "driver": "bridge", "subnet": "172.18.0.0/16", "endpoints": [
+                {"name": "gateway_bbb", "service": "gateway", "ipv4": "172.18.0.4"},
+            ]},
+            {"name": "host_net", "scope": "local", "driver": "host", "endpoints": [
+                {"name": "app_db", "service": "db", "ipv4": "127.0.0.1"},
+            ]}
+        ]),
+    }
+    result = analyze_networks(by_node)
+    assert result["consistent"] is True
+    assert result["warnings"] == []

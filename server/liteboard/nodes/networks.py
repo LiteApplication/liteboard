@@ -47,6 +47,14 @@ def analyze_networks(networks_by_node: dict[str, dict]) -> dict:
     for node_id, view in (networks_by_node or {}).items():
         for net in (view or {}).get("networks", []):
             net_name = net.get("name") or net.get("id")
+            scope = net.get("scope")
+            driver = net.get("driver")
+
+            # Skip node-local networks (bridge, host, docker_gwbridge, etc.) as IP addresses
+            # are allocated locally and overlaps across nodes are expected and normal.
+            if scope == "local" or driver in {"bridge", "host", "null"} or net_name in {"docker_gwbridge", "bridge", "host", "none"}:
+                continue
+
             if net.get("subnet"):
                 subnets_by_net[net_name][node_id] = net["subnet"]
             for ep in net.get("endpoints", []):
