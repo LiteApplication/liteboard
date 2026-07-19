@@ -51,27 +51,24 @@ async function applyOne(item) {
 }
 
 async function applyAll() {
-  const serverSvc = outdated.value.find((i) => i.id === store.overview?.server_service_id)
-  if (serverSvc) {
-    if (!confirm('Update all services? Note that this includes the LiteBoard server itself, which will temporarily take the dashboard offline.')) {
-      return
-    }
-  } else {
-    if (!confirm(`Update all ${outdated.value.length} out-of-date service(s)?`)) return
-  }
+  const hasServer = outdated.value.some((i) => i.id === store.overview?.server_service_id)
+  const msg = hasServer
+    ? 'Update all services? Note that this includes the LiteBoard server itself, which will temporarily take the dashboard offline.'
+    : `Update all ${outdated.value.length} out-of-date service(s)?`
+  if (!confirm(msg)) return
 
   applyingAll.value = true
   try {
-    await api.applyAll()
-    if (serverSvc) {
+    const result = await api.applyAll()
+    if (result.server_updated) {
       waitForServer()
     } else {
       await load()
+      applyingAll.value = false
     }
   } catch (e) {
     error.value = e.message
-  } finally {
-    if (!serverSvc) applyingAll.value = false
+    applyingAll.value = false
   }
 }
 

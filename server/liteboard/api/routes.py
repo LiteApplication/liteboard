@@ -79,6 +79,7 @@ async def apply_one(service_id: str):
 async def apply_all():
     services = await asyncio.to_thread(swarm.list_services_with_tasks)
     checked = await updates.check_updates(services)
+    server_id, _ = await asyncio.to_thread(swarm.get_server_service_info)
     applied = []
     for item in checked:
         if item["update_available"] and item["remote_digest"]:
@@ -91,8 +92,9 @@ async def apply_all():
                 item["remote_digest"],
             )
             redeploys.mark(item["id"])
-            applied.append({"service": item["name"], "digest": item["remote_digest"]})
-    return {"ok": True, "applied": applied, "count": len(applied)}
+            applied.append({"id": item["id"], "service": item["name"], "digest": item["remote_digest"]})
+    server_updated = any(a["id"] == server_id for a in applied) if server_id else False
+    return {"ok": True, "applied": applied, "count": len(applied), "server_updated": server_updated}
 
 
 from pydantic import BaseModel
