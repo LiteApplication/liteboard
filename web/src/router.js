@@ -4,6 +4,7 @@ import Updates from './views/Updates.vue'
 import Nodes from './views/Nodes.vue'
 import Networks from './views/Networks.vue'
 import Login from './views/Login.vue'
+import Setup from './views/Setup.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -13,5 +14,6 @@ export const router = createRouter({
     { path: '/nodes', name: 'nodes', component: Nodes, meta: { nav: 'Nodes', icon: 'server' } },
     { path: '/networks', name: 'networks', component: Networks, meta: { nav: 'Networks', icon: 'share' } },
     { path: '/login', name: 'login', component: Login, meta: { public: true } },
+    { path: '/setup', name: 'setup', component: Setup, meta: { public: true } },
   ],
 })

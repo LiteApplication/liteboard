@@ -1,6 +1,7 @@
 # Secrets — never commit
 .env
 secrets/
+.devdata/
 
 # Python
 server/.venv/

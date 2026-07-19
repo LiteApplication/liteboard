@@ -61,65 +61,48 @@ Metrics and network data come from a small **Python daemon** that runs on every 
 ### Prerequisites
 
 - A Docker Swarm with at least one **manager** node (`docker swarm init` if you don't have one).
-- An **Authentik** instance reachable from the server.
-- `make` and Python 3.11+ on the machine you run the setup commands from (only for `make keygen`).
+- An **Authentik** instance reachable from the server (you configure it in the wizard).
 
-### 1. Register LiteBoard in Authentik
+That's all — no keys, secrets, or config files to prepare up front.
 
-1. **Providers → Create → OAuth2/OpenID Provider**
-   - Redirect URI: `https://<liteboard-host>/auth/callback`
-   - Signing key: your default; scopes: `openid profile email` (add a **groups** scope/mapping if you'll use `LITEBOARD_OIDC_REQUIRED_GROUP`).
-2. **Applications → Create** and bind it to the provider above. Note the app **slug**.
-3. Copy the **Client ID** and **Client Secret**. Your **issuer** is
-   `https://<authentik-host>/application/o/<slug>/` (trailing slash matters).
-
-### 2. Generate the signing keypair
+### 1. Deploy the stack
 
 ```bash
-git clone <this-repo> liteboard && cd liteboard
-make keygen        # writes secrets/signing_key, prints LITEBOARD_SERVER_PUBKEY=...
-```
-
-### 3. Configure
-
-```bash
-cp .env.example .env
-$EDITOR .env       # paste the pubkey from step 2, fill in OIDC + base URL + session secret
-```
-
-### 4. Create the Swarm secrets
-
-```bash
-# Private signing key (from make keygen):
-docker secret create liteboard_signing_key secrets/signing_key
-
-# Registry credentials for private images. If you only use public images,
-# create an empty one so the stack can start:
-echo '{}' | docker secret create liteboard_registry_creds -
-#   …or, to check PRIVATE repos, use a real Docker config.json:
-#   docker secret create liteboard_registry_creds ~/.docker/config.json
-```
-
-> `make secret` runs both of the above for the empty-registry case.
-
-### 5. Build & deploy
-
-```bash
-make build         # or: docker compose build
 docker stack deploy -c docker-compose.yml liteboard
 ```
 
-The **server** lands on a manager; the **daemon** rolls out to every node automatically as a `global` service. Daemons publish port `9187` in **host mode**, so the server reaches each one at `<node-ip>:9187` — keep that port firewalled to the cluster (the signatures secure it regardless).
+The compose file pulls prebuilt multi-arch images from GHCR. The **server** lands on a manager; the **daemon** rolls out to every node automatically as a `global` service and boots *unprovisioned* until the server hands it the signing key. Daemons publish port `9187` in **host mode** — keep it firewalled to the cluster (signatures secure it regardless).
 
-### 6. TLS / reverse proxy
+> Deploying to a **multi-node** swarm from a **private** registry? Add `--with-registry-auth` so workers can pull the daemon image.
 
-Terminate TLS in front of the published port (`8000`). Example Traefik labels or an nginx `proxy_pass` to `server:8000` both work — just make sure `LITEBOARD_BASE_URL` matches the public HTTPS URL so the OIDC redirect is correct.
+### 2. Point TLS at the server
 
-### 7. Verify
+Terminate TLS in front of the published port (`8000`) with your reverse proxy (Traefik, nginx `proxy_pass` to `server:8000`, …). You'll enter this public HTTPS URL in the wizard.
 
-1. Open `https://<liteboard-host>` → you're redirected to Authentik → sign in → the dashboard loads.
+### 3. Register LiteBoard in Authentik
+
+1. **Providers → Create → OAuth2/OpenID Provider**
+   - Redirect URI: `https://<liteboard-host>/auth/callback`
+   - Scopes: `openid profile email` (add a **groups** scope/mapping if you'll use a required group).
+2. **Applications → Create** and bind it to the provider. Note the app **slug**.
+3. Copy the **Client ID** / **Client Secret**. Your **issuer** is
+   `https://<authentik-host>/application/o/<slug>/` (trailing slash matters).
+
+### 4. Run the first-login wizard
+
+Grab the one-time setup token from the server logs:
+
+```bash
+docker service logs liteboard_server | grep "Setup token"   # or: make token
+```
+
+Open `https://<liteboard-host>` — you'll land on the **setup wizard**. Enter the token, your public URL, and the Authentik issuer / client ID / secret from step 3. On submit LiteBoard validates the issuer, **generates its Ed25519 signing key**, saves config to the `liteboard_data` volume, and restarts. Within a few seconds the server also **pushes the public key to every daemon** over the manager socket — no manual key handling.
+
+### 5. Verify
+
+1. After the wizard, you're redirected to Authentik → sign in → the dashboard loads.
 2. **Overview** shows your services; deliberately break one (`docker service scale <svc>=0`) and watch it flag.
-3. **Nodes** shows a live gauge card per node with a green *daemon up* badge.
+3. **Nodes** shows a live gauge card per node with a green *daemon up* badge (daemons flip from *unprovisioned* to up once keyed).
 4. **Nodes → Update daemons** pushes a signed self-update; the reported version bumps.
 5. **Networks** reports *consistent* (or lists any real inconsistencies).
 
@@ -149,25 +132,49 @@ Set `LITEBOARD_AUTH_DISABLED=true` to bypass OIDC while developing.
 
 ## Configuration reference
 
-All settings are environment variables prefixed `LITEBOARD_` (see `server/liteboard/config.py`).
+Normally you configure LiteBoard through the **wizard** — the settings below are
+persisted to `config.json` in the `liteboard_data` volume. Every one can also be
+overridden by an environment variable prefixed `LITEBOARD_` (env wins over the
+saved config; see `server/liteboard/config.py`).
 
 | Variable | Purpose |
 | --- | --- |
-| `BASE_URL` | Public URL; used to build the OIDC redirect URI. |
-| `SESSION_SECRET` | Secret for signing session cookies. |
-| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Authentik OIDC application. |
+| `DATA_DIR` | Runtime state dir (config, generated signing key, setup token). Default `/data`. |
+| `BASE_URL` | Public URL; used to build the OIDC redirect URI. Set by the wizard. |
+| `SESSION_SECRET` | Session-cookie secret. Auto-generated + persisted on first boot if unset. |
+| `OIDC_ISSUER` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Authentik OIDC app. Set by the wizard. |
 | `OIDC_REQUIRED_GROUP` | Optional group gate. |
-| `SERVER_PUBKEY` | Public key given to daemons (server derives it from the secret too). |
+| `SIGNING_KEY_FILE` | Path to the Ed25519 private key. Auto-resolves to `<DATA_DIR>/signing_key`. |
 | `DAEMON_PORT` / `DAEMON_SCHEME` | Where/how to reach node daemons. |
 | `POLL_INTERVAL` | Seconds between node polls / SSE ticks. |
-| `REGISTRY_CONFIG_FILE` | Path to the `liteboard_registry_creds` secret (Docker `config.json`). |
-| `AUTH_DISABLED` | Dev only — skip OIDC. |
+| `REGISTRY_CONFIG_FILE` | Docker `config.json` for private-repo update checks (optional). |
+| `AUTH_DISABLED` | Dev only — skip OIDC (treats the server as configured). |
+
+### Advanced: pre-provisioning (skip the wizard)
+
+Set `LITEBOARD_BASE_URL`, all three `OIDC_*` values, **and** provide a signing key
+(a `liteboard_signing_key` Docker secret, a bind-mounted `signing_key`, or
+`LITEBOARD_SIGNING_KEY`) and the server boots already-configured — no wizard, no
+setup token. The daemon key-injection still happens automatically. Generate a key
+offline with `make keygen` if you want to pin it yourself.
 
 ## Security notes
 
-- **Key rotation:** replace the `liteboard_signing_key` secret and redeploy the stack; the new public key propagates to daemons via the updated env. Rotating rejects old daemons until they receive the new pubkey.
-- **Daemon exposure:** prefer firewalling `DAEMON_PORT` to intra-cluster traffic. Signatures already prevent unauthorized use, but least-exposure is still best.
-- **Private registries:** provide real credentials through the `liteboard_registry_creds` secret to detect updates for private repos.
+- **One stable Ed25519 keypair.** The private key is generated at setup into the
+  `liteboard_data` volume (or supplied as a Docker secret) and never leaves the
+  server. The server delivers the **public** key to every daemon by updating the
+  daemon service's env over the manager socket — the signing/verify protocol is
+  unchanged, only the delivery is automated.
+- **Setup token:** before configuration the wizard is gated by a one-time token
+  printed only to the server logs, so an exposed public port can't be hijacked.
+- **Key rotation:** delete `signing_key` from the `liteboard_data` volume and
+  restart the server (it generates a fresh key and re-pushes the new pubkey to
+  all daemons). Old daemons are rejected until they receive the new key.
+- **Daemon exposure:** prefer firewalling `DAEMON_PORT` to intra-cluster traffic.
+  Signatures already prevent unauthorized use, but least-exposure is still best.
+- **Private registries:** provide credentials via a `liteboard_registry_creds`
+  secret (see the commented block in `docker-compose.yml`) to detect updates for
+  private repos.
 
 ## Repository layout
 

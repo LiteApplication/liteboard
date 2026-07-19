@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from functools import lru_cache
 
@@ -9,6 +10,11 @@ import docker
 from docker import DockerClient
 
 from ..config import get_settings
+
+# Service label the compose stack stamps on the daemon service so the server
+# can find it to inject the signing public key.
+DAEMON_SERVICE_LABEL = "liteboard.role=daemon"
+_PUBKEY_ENV = "LITEBOARD_SERVER_PUBKEY"
 
 
 @lru_cache
@@ -81,6 +87,56 @@ def update_service_image(service_id: str, image_ref: str) -> None:
     with _lock:
         svc = client.services.get(service_id)
         svc.update(image=image_ref, force_update=None)
+
+
+def find_daemon_service():
+    """Locate the LiteBoard daemon service (by its stack label, name fallback)."""
+    client = get_client()
+    labelled = client.services.list(filters={"label": DAEMON_SERVICE_LABEL})
+    if labelled:
+        return labelled[0]
+    for svc in client.services.list():
+        name = svc.attrs.get("Spec", {}).get("Name", "") or ""
+        if name == "daemon" or name.endswith("_daemon"):
+            return svc
+    return None
+
+
+def ensure_daemon_pubkey(pub_b64: str) -> str:
+    """Ensure the daemon service env carries the server's signing public key.
+
+    Returns ``"updated"``, ``"ok"`` (already correct), or ``"not-found"``.
+
+    docker-py's ``Service.update`` only preserves the image and drops every
+    other field, so we drive the low-level ``update_service`` with the existing
+    spec and change *only* the ``LITEBOARD_SERVER_PUBKEY`` env entry.
+    """
+    client = get_client()
+    with _lock:
+        svc = find_daemon_service()
+        if svc is None:
+            return "not-found"
+        spec = copy.deepcopy(svc.attrs.get("Spec", {}))
+        task = spec.setdefault("TaskTemplate", {})
+        cspec = task.setdefault("ContainerSpec", {})
+        env = list(cspec.get("Env") or [])
+        target = f"{_PUBKEY_ENV}={pub_b64}"
+        current = next((e for e in env if e.startswith(f"{_PUBKEY_ENV}=")), None)
+        if current == target:
+            return "ok"
+        env = [e for e in env if not e.startswith(f"{_PUBKEY_ENV}=")]
+        env.append(target)
+        cspec["Env"] = env
+        # fetch_current_spec=True: docker-py re-reads the live spec and merges
+        # our TaskTemplate over it, so we change *only* the env and preserve
+        # everything else (mounts, networks, placement, restart policy, …).
+        client.api.update_service(
+            svc.id,
+            svc.version,
+            task_template=task,
+            fetch_current_spec=True,
+        )
+        return "updated"
 
 
 def force_update_service(service_id: str) -> None:

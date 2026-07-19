@@ -1,15 +1,21 @@
 # LiteBoard — Docker Swarm stack.
+#
 #   docker stack deploy -c docker-compose.yml liteboard
 #
-# Requires (see README):
-#   - swarm secret  liteboard_signing_key   (Ed25519 private key, from `make keygen`)
-#   - optional secret liteboard_registry_creds (a Docker config.json for private repos)
-#   - a .env file providing OIDC settings + LITEBOARD_SERVER_PUBKEY
+# That's it — no secrets, no .env, no keys to generate. On first deploy the
+# server boots UNCONFIGURED and prints a one-time setup token to its logs:
+#
+#   docker service logs liteboard_server        # look for "Setup token: …"
+#
+# Open the published URL, enter the token, fill in your Authentik OIDC details,
+# and the server generates its signing key and hands the public key to every
+# daemon automatically over the manager socket. State lives in the
+# `liteboard_data` volume (config + generated key), so it survives restarts.
 version: "3.8"
 
 services:
   server:
-    image: ${LITEBOARD_IMAGE:-liteboard/server:latest}
+    image: ${LITEBOARD_IMAGE:-ghcr.io/liteapplication/liteboard/server:latest}
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -20,21 +26,16 @@ services:
         protocol: tcp
         mode: ingress
     environment:
-      LITEBOARD_BASE_URL: ${LITEBOARD_BASE_URL}
-      LITEBOARD_SESSION_SECRET: ${LITEBOARD_SESSION_SECRET}
-      LITEBOARD_OIDC_ISSUER: ${LITEBOARD_OIDC_ISSUER}
-      LITEBOARD_OIDC_CLIENT_ID: ${LITEBOARD_OIDC_CLIENT_ID}
-      LITEBOARD_OIDC_CLIENT_SECRET: ${LITEBOARD_OIDC_CLIENT_SECRET}
-      LITEBOARD_OIDC_REQUIRED_GROUP: ${LITEBOARD_OIDC_REQUIRED_GROUP:-}
+      LITEBOARD_DATA_DIR: /data
+      LITEBOARD_DOCKER_HOST: unix:///var/run/docker.sock
       LITEBOARD_DAEMON_PORT: ${LITEBOARD_DAEMON_PORT:-9187}
       LITEBOARD_DAEMON_SCHEME: http
       LITEBOARD_POLL_INTERVAL: ${LITEBOARD_POLL_INTERVAL:-5}
-      LITEBOARD_DOCKER_HOST: unix:///var/run/docker.sock
+      # OIDC / base URL / session secret are configured by the setup wizard and
+      # persisted to the volume. Advanced users may instead bake them in here.
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    secrets:
-      - liteboard_signing_key
-      - liteboard_registry_creds
+      - liteboard_data:/data
     deploy:
       replicas: 1
       placement:
@@ -43,13 +44,14 @@ services:
         condition: any
 
   daemon:
-    image: ${LITEBOARD_DAEMON_IMAGE:-liteboard/daemon:latest}
+    image: ${LITEBOARD_DAEMON_IMAGE:-ghcr.io/liteapplication/liteboard/daemon:latest}
     build:
       context: ./daemon
       dockerfile: Dockerfile
-    # One instance per node.
+    # One instance per node. Boots "unprovisioned" until the server injects the
+    # signing public key (the env below stays empty on a plain deploy).
     environment:
-      LITEBOARD_SERVER_PUBKEY: ${LITEBOARD_SERVER_PUBKEY}
+      LITEBOARD_SERVER_PUBKEY: ${LITEBOARD_SERVER_PUBKEY:-}
       LITEBOARD_DAEMON_PORT: ${LITEBOARD_DAEMON_PORT:-9187}
       LITEBOARD_DAEMON_BIND: 0.0.0.0
       LITEBOARD_PROCFS: /host/proc
@@ -66,6 +68,9 @@ services:
       - /proc:/host/proc:ro
     deploy:
       mode: global
+      # The server locates the daemon service by this label to inject the key.
+      labels:
+        liteboard.role: daemon
       restart_policy:
         condition: any
 
@@ -74,8 +79,20 @@ networks:
     driver: overlay
     attachable: true
 
-secrets:
-  liteboard_signing_key:
-    external: true
-  liteboard_registry_creds:
-    external: true
+volumes:
+  liteboard_data:
+
+# --- Optional: private image registry ---------------------------------------
+# Public GHCR images need no auth. To pull images onto workers from a PRIVATE
+# registry, deploy with `--with-registry-auth`. To let LiteBoard detect updates
+# for PRIVATE app images, add a registry-creds secret and point the server at it
+# (uncomment below):
+#
+# secrets:
+#   liteboard_registry_creds:
+#     external: true
+# services:
+#   server:
+#     secrets: [liteboard_registry_creds]
+#     environment:
+#       LITEBOARD_REGISTRY_CONFIG_FILE: /run/secrets/liteboard_registry_creds

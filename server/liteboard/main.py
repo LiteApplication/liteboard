@@ -14,10 +14,27 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import __version__
 from .api.routes import router as api_router
 from .auth.oidc import router as auth_router
-from .config import get_settings
+from .config import data_dir, ensure_session_secret, ensure_setup_token, get_settings
+from .setup import router as setup_router
 from .state import init_state
 
 STATIC_DIR = Path(os.environ.get("LITEBOARD_STATIC_DIR", "/app/static"))
+
+
+def _announce_setup(settings) -> None:
+    """When unconfigured, print the setup token so the operator can unlock the
+    first-login wizard (visible via ``docker service logs liteboard_server``)."""
+    if settings.is_configured:
+        return
+    token = ensure_setup_token()
+    print(
+        "\n" + "=" * 68 + "\n"
+        "  LiteBoard is UNCONFIGURED.\n"
+        f"  Open {settings.base_url} and complete the setup wizard.\n"
+        f"  Setup token:  {token}\n"
+        + "=" * 68 + "\n",
+        flush=True,
+    )
 
 
 @asynccontextmanager
@@ -31,16 +48,24 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # Ensure the runtime data dir exists and a stable session secret is present
+    # before wiring middleware (both survive across restarts via the volume).
+    data_dir().mkdir(parents=True, exist_ok=True)
+    session_secret = ensure_session_secret()
+
     settings = get_settings()
+    _announce_setup(settings)
+
     app = FastAPI(title="LiteBoard", version=__version__, lifespan=lifespan)
 
     app.add_middleware(
         SessionMiddleware,
-        secret_key=settings.session_secret,
+        secret_key=session_secret,
         https_only=settings.base_url.startswith("https"),
         same_site="lax",
     )
 
+    app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(api_router)
 

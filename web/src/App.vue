@@ -17,7 +17,8 @@ const navItems = [
   { name: 'networks', label: 'Networks', icon: 'share', to: '/networks' },
 ]
 
-const isLogin = computed(() => route.name === 'login')
+// Login and Setup render full-screen without the app chrome.
+const isBare = computed(() => route.name === 'login' || route.name === 'setup')
 
 const badCount = computed(() => {
   const c = store.overview?.counts
@@ -32,6 +33,13 @@ function toLogin() {
 
 onMounted(async () => {
   try {
+    // Before anything else: has the server been set up? If not, run the wizard.
+    const setup = await api.setupStatus().catch(() => ({ configured: true }))
+    if (!setup.configured) {
+      if (route.name !== 'setup') router.push('/setup')
+      ready.value = true
+      return
+    }
     user.value = await api.me()
     startStream(toLogin)
   } catch (e) {
@@ -49,7 +57,7 @@ async function doLogout() {
 </script>
 
 <template>
-  <div v-if="isLogin" class="h-full">
+  <div v-if="isBare" class="h-full">
     <router-view />
   </div>
 

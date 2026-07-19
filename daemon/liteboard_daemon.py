@@ -8,7 +8,9 @@ valid Ed25519 signature from the server's private key, plus a fresh
 timestamp+nonce to defeat replay. The daemon knows only the server's public key.
 
 Environment:
-    LITEBOARD_SERVER_PUBKEY   base64url Ed25519 public key (required)
+    LITEBOARD_SERVER_PUBKEY   base64url Ed25519 public key. If empty the daemon
+                              boots "unprovisioned" (liveness only) until the
+                              server injects the key over the manager socket.
     LITEBOARD_DAEMON_PORT     listen port (default 9opts below)
     LITEBOARD_DAEMON_BIND     bind address (default 0.0.0.0; prefer overlay IP)
     LITEBOARD_DOCKER_SOCK     docker socket path (default /var/run/docker.sock)
@@ -64,10 +66,15 @@ class ReplayCache:
 class Daemon:
     def __init__(self) -> None:
         pub_b64 = os.environ.get("LITEBOARD_SERVER_PUBKEY", "").strip()
-        if not pub_b64:
-            raise SystemExit("LITEBOARD_SERVER_PUBKEY is required")
-        self.pubkey: Ed25519PublicKey = protocol.load_public_key(pub_b64)
-        self.key_id = protocol.key_id(pub_b64)
+        # Boot even without a public key: the server hands us one over the
+        # manager socket shortly after the stack deploys (which restarts this
+        # task with the env populated). Until then we stay "unprovisioned" —
+        # liveness only, no authenticated endpoints — rather than crash-loop.
+        self.provisioned = bool(pub_b64)
+        self.pubkey: Ed25519PublicKey | None = (
+            protocol.load_public_key(pub_b64) if pub_b64 else None
+        )
+        self.key_id = protocol.key_id(pub_b64) if pub_b64 else None
         self.replay = ReplayCache(window=MAX_SKEW * 2)
         self.metrics = MetricsCollector()
         self.metrics.start()
@@ -105,6 +112,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b""
 
     def _authed(self, body: bytes) -> bool:
+        if not DAEMON.provisioned:
+            self._send_json(
+                503, {"error": "unprovisioned", "detail": "awaiting server public key"}
+            )
+            return False
         try:
             DAEMON.authenticate(
                 self.command, self.path, dict(self.headers.items()), body
@@ -121,7 +133,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         route = self.path.split("?", 1)[0]
         if route == "/health":
-            self._send_json(200, {"status": "ok", "version": VERSION})
+            self._send_json(
+                200,
+                {"status": "ok", "version": VERSION, "provisioned": DAEMON.provisioned},
+            )
             return
         body = self._read_body()
         if not self._authed(body):
@@ -174,7 +189,8 @@ def main() -> None:
     bind = os.environ.get("LITEBOARD_DAEMON_BIND", "0.0.0.0")
     port = int(os.environ.get("LITEBOARD_DAEMON_PORT", "9187"))
     httpd = ThreadingHTTPServer((bind, port), Handler)
-    print(f"LiteBoard daemon {VERSION} listening on {bind}:{port} (key {DAEMON.key_id})")
+    where = f"key {DAEMON.key_id}" if DAEMON.provisioned else "UNPROVISIONED (awaiting key)"
+    print(f"LiteBoard daemon {VERSION} listening on {bind}:{port} ({where})")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -23,6 +23,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  setupStatus: () => request('/api/setup/status'),
+  submitSetup: (payload) => request('/api/setup', { method: 'POST', body: JSON.stringify(payload) }),
   me: () => request('/api/me'),
   overview: () => request('/api/overview'),
   updates: () => request('/api/updates'),

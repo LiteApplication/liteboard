@@ -9,26 +9,27 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: keygen
-keygen: ## Generate the stable Ed25519 signing keypair (writes secrets/signing_key, prints pubkey)
-	@$(PY) scripts/keygen.py
-
-.PHONY: secret
-secret: ## Create swarm secrets from secrets/signing_key (+ empty registry creds)
-	docker secret create liteboard_signing_key secrets/signing_key
-	echo '{}' | docker secret create liteboard_registry_creds -
-
 .PHONY: build
 build: ## Build server + daemon images
 	docker compose build
 
 .PHONY: deploy
-deploy: ## Deploy the stack (docker stack deploy)
+deploy: ## Deploy the stack (no pre-config needed — configure via the wizard)
 	docker stack deploy -c docker-compose.yml liteboard
+
+.PHONY: token
+token: ## Print the first-login setup token from the server logs
+	@docker service logs liteboard_server 2>&1 | grep "Setup token" | tail -1 \
+	  || echo "No setup token found — the server may already be configured."
 
 .PHONY: remove
 remove: ## Remove the stack
 	docker stack rm liteboard
+
+# --- Advanced / offline (optional) ------------------------------------------
+.PHONY: keygen
+keygen: ## (Advanced) Pre-generate a signing keypair offline instead of via the wizard
+	@$(PY) scripts/keygen.py
 
 .PHONY: web
 web: ## Build the Vue SPA locally
@@ -41,6 +42,7 @@ test: ## Run server unit tests
 .PHONY: dev-server
 dev-server: ## Run the API server locally (auth disabled)
 	cd server && LITEBOARD_AUTH_DISABLED=true \
+	  LITEBOARD_DATA_DIR=$(PWD)/.devdata \
 	  LITEBOARD_STATIC_DIR=$(PWD)/web/dist \
 	  LITEBOARD_SIGNING_KEY_FILE=$(PWD)/secrets/signing_key \
 	  .venv/bin/uvicorn liteboard.main:app --reload --port 8000
