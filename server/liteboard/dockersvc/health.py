@@ -68,6 +68,14 @@ def classify_service(
     now = now or datetime.now(timezone.utc)
     tasks = service.get("tasks", [])
 
+    # Sort tasks descending by Timestamp so we get the most recent tasks first.
+    def task_time(t: dict) -> datetime:
+        status = t.get("Status") or {}
+        ts = _parse_ts(status.get("Timestamp"))
+        return ts or datetime.min.replace(tzinfo=timezone.utc)
+
+    tasks = sorted(tasks, key=task_time, reverse=True)
+
     running = [
         t
         for t in tasks
@@ -129,8 +137,8 @@ def classify_service(
         "state": state,
         "crash_looping": crash_looping,
         "recent_failures": len(recent_failures),
-        "last_error": last_error,
-        "last_exit_code": last_exit_code,
+        "last_error": last_error if state != "healthy" else None,
+        "last_exit_code": last_exit_code if state != "healthy" else None,
         "labels": service.get("labels", {}),
     }
 

@@ -82,6 +82,19 @@ def test_old_failures_not_crash_loop():
     svc = _service("stable", replicas=1, tasks=tasks)
     result = health.classify_service(svc)
     assert result["state"] == "healthy"
+    assert result["last_error"] is None
+    assert result["last_exit_code"] is None
+
+
+def test_healthy_service_clears_error():
+    # Even if there was a recent failure, if the service is healthy (all replicas running),
+    # last_error and last_exit_code should be cleared to avoid showing stale warnings.
+    tasks = [_failed_task(secs_ago=10), _running_task()]
+    svc = _service("stable", replicas=1, tasks=tasks)
+    result = health.classify_service(svc)
+    assert result["state"] == "healthy"
+    assert result["last_error"] is None
+    assert result["last_exit_code"] is None
 
 
 def test_global_mode_desired_from_nodes():

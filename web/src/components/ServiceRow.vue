@@ -54,7 +54,7 @@ async function redeploy() {
         </span>
       </div>
       <div class="text-xs text-slate-500 font-mono truncate mt-1">{{ s.image }}</div>
-      <div v-if="s.last_error" class="text-xs text-critical/90 mt-1.5 truncate">
+      <div v-if="s.last_error && s.state !== 'healthy'" class="text-xs text-critical/90 mt-1.5 truncate">
         ⚠ {{ s.last_error }}
         <span v-if="s.last_exit_code != null" class="text-slate-500">(exit {{ s.last_exit_code }})</span>
       </div>
