@@ -77,6 +77,8 @@ def inspect_networks(socket_path: str = "/var/run/docker.sock") -> dict:
         endpoints = []
         for cid, ep in (detail.get("Containers") or {}).items():
             name = ep.get("Name", "")
+            if name.endswith("-endpoint"):
+                continue
             endpoints.append(
                 {
                     "container": cid,

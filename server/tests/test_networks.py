@@ -87,3 +87,24 @@ def test_local_networks_ignored():
     result = analyze_networks(by_node)
     assert result["consistent"] is True
     assert result["warnings"] == []
+
+
+def test_swarm_endpoints_ignored():
+    # Endpoints representing Swarm VIP load balancers (ending with -endpoint)
+    # should be ignored and not raise IP collision/conflict warnings even if
+    # they report different IPs or are present across nodes.
+    by_node = {
+        "n1": _view([
+            {"name": "app_net", "scope": "swarm", "driver": "overlay", "endpoints": [
+                {"name": "firefly-endpoint", "service": "firefly", "ipv4": "10.0.12.15"},
+            ]}
+        ]),
+        "n2": _view([
+            {"name": "app_net", "scope": "swarm", "driver": "overlay", "endpoints": [
+                {"name": "firefly-endpoint", "service": "firefly", "ipv4": "10.0.12.17"},
+            ]}
+        ]),
+    }
+    result = analyze_networks(by_node)
+    assert result["consistent"] is True
+    assert result["warnings"] == []

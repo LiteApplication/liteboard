@@ -58,10 +58,13 @@ def analyze_networks(networks_by_node: dict[str, dict]) -> dict:
             if net.get("subnet"):
                 subnets_by_net[net_name][node_id] = net["subnet"]
             for ep in net.get("endpoints", []):
+                name = ep.get("name", "")
+                if name.endswith("-endpoint"):
+                    continue
                 ip = ep.get("ipv4")
                 if not ip:
                     continue
-                identity = _task_identity(ep.get("name", ""))
+                identity = _task_identity(name)
                 ip_owners[net_name][ip].add(identity or ep.get("container", "?"))
                 if identity:
                     task_ips[net_name][identity][ip].add(node_id)
