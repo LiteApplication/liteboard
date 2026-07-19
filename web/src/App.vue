@@ -57,7 +57,21 @@ async function doLogout() {
 </script>
 
 <template>
-  <div v-if="isBare" class="h-full">
+  <div v-if="store.updatingServer" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-canvas text-center p-6 select-none animate-fadeIn">
+    <div class="w-16 h-16 rounded-2xl bg-accent/15 text-accent flex items-center justify-center mb-6 animate-pulse">
+      <Icon name="refresh" :size="32" class="animate-spin" />
+    </div>
+    <h1 class="text-xl font-semibold text-slate-100 tracking-tight">Updating LiteBoard Server</h1>
+    <p class="text-sm text-slate-500 mt-2 max-w-sm leading-relaxed">
+      The server container is restarting with the new image. The dashboard will automatically reconnect once the update completes.
+    </p>
+    <div class="mt-8 flex items-center gap-2.5 text-xs text-slate-400 font-mono bg-surface-2 border border-border px-3 py-1.5 rounded-full">
+      <span class="w-2 h-2 rounded-full bg-accent animate-pulseGlow" />
+      <span>pinging backend…</span>
+    </div>
+  </div>
+
+  <div v-else-if="isBare" class="h-full">
     <router-view />
   </div>
 

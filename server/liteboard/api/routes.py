@@ -22,6 +22,9 @@ async def overview():
     services = await asyncio.to_thread(swarm.list_services_with_tasks)
     result = health.build_overview(services, redeploys.active_ids())
     result["swarm"] = await asyncio.to_thread(swarm.swarm_info)
+    server_id, server_name = await asyncio.to_thread(swarm.get_server_service_info)
+    result["server_service_id"] = server_id
+    result["server_service_name"] = server_name
     return result
 
 
@@ -58,8 +61,8 @@ async def apply_one(service_id: str):
     if not match:
         raise HTTPException(404, "service not found")
     checked = (await updates.check_updates([match]))[0]
-    if not checked["update_available"] or not checked["remote_digest"]:
-        raise HTTPException(409, f"no update available (status: {checked['status']})")
+    if checked["status"] not in {"outdated", "unpinned"} or not checked["remote_digest"]:
+        raise HTTPException(409, f"cannot update or pin service (status: {checked['status']})")
     await asyncio.to_thread(
         updates.apply_update,
         service_id,

@@ -5,6 +5,7 @@ import Icon from '../components/Icon.vue'
 import RegistryLoginModal from '../components/RegistryLoginModal.vue'
 import { api } from '../lib/api'
 import { shortDigest } from '../lib/format'
+import { store, waitForServer } from '../lib/store'
 
 const items = ref([])
 const loading = ref(true)
@@ -28,27 +29,49 @@ async function load() {
 }
 
 async function applyOne(item) {
+  const isServer = item.id === store.overview?.server_service_id
+  if (isServer) {
+    if (!confirm('You are updating the LiteBoard server itself. This will temporarily take the dashboard offline. Proceed?')) {
+      return
+    }
+  }
   busy.value = item.id
   try {
     await api.applyUpdate(item.id)
-    await load()
+    if (isServer) {
+      waitForServer()
+    } else {
+      await load()
+    }
   } catch (e) {
     error.value = `${item.name}: ${e.message}`
   } finally {
-    busy.value = null
+    if (!isServer) busy.value = null
   }
 }
 
 async function applyAll() {
-  if (!confirm(`Update all ${outdated.value.length} out-of-date service(s)?`)) return
+  const serverSvc = outdated.value.find((i) => i.id === store.overview?.server_service_id)
+  if (serverSvc) {
+    if (!confirm('Update all services? Note that this includes the LiteBoard server itself, which will temporarily take the dashboard offline.')) {
+      return
+    }
+  } else {
+    if (!confirm(`Update all ${outdated.value.length} out-of-date service(s)?`)) return
+  }
+
   applyingAll.value = true
   try {
     await api.applyAll()
-    await load()
+    if (serverSvc) {
+      waitForServer()
+    } else {
+      await load()
+    }
   } catch (e) {
     error.value = e.message
   } finally {
-    applyingAll.value = false
+    if (!serverSvc) applyingAll.value = false
   }
 }
 
@@ -126,6 +149,11 @@ onMounted(load)
                       :disabled="busy != null || applyingAll" @click="applyOne(item)">
                 <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
                 Update
+              </button>
+              <button v-else-if="item.status === 'unpinned' && item.remote_digest" class="btn-ghost !py-1.5 !px-3"
+                      :disabled="busy != null || applyingAll" @click="applyOne(item)">
+                <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
+                Pin
               </button>
             </td>
           </tr>

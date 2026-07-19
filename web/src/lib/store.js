@@ -6,6 +6,7 @@ export const store = reactive({
   overview: null, // { counts, services, swarm }
   nodes: [],      // [{ node, metrics, reachable, daemon }]
   lastError: null,
+  updatingServer: false,
 })
 
 let es = null
@@ -33,4 +34,22 @@ export function startStream(onUnauthorized) {
 
 export function stopStream() {
   if (es) { es.close(); es = null; store.connected = false }
+}
+
+export async function waitForServer() {
+  store.updatingServer = true
+  stopStream()
+  while (true) {
+    try {
+      const res = await fetch('/api/me', { credentials: 'same-origin' })
+      if (res.status === 200) {
+        store.updatingServer = false
+        window.location.reload()
+        break
+      }
+    } catch {
+      // Ignore network errors while server is offline
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+  }
 }

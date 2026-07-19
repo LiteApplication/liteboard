@@ -240,3 +240,18 @@ def swarm_info() -> dict:
         "managers": swarm.get("Managers"),
         "cluster_id": (swarm.get("Cluster") or {}).get("ID"),
     }
+
+
+def get_server_service_info() -> tuple[str | None, str | None]:
+    """Return (service_id, service_name) for the server itself, if running in Swarm."""
+    import socket
+    client = get_client()
+    try:
+        hostname = socket.gethostname()
+        container = client.containers.get(hostname)
+        labels = container.attrs.get("Config", {}).get("Labels", {})
+        service_id = labels.get("com.docker.swarm.service.id")
+        service_name = labels.get("com.docker.swarm.service.name")
+        return service_id, service_name
+    except Exception:
+        return None, None
