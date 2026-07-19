@@ -66,8 +66,8 @@ onMounted(load)
       <button class="btn-ghost" :disabled="loading" @click="load">
         <Icon name="refresh" :size="15" :class="loading && 'animate-spin'" /> Refresh
       </button>
-      <button v-if="outdated.length" class="btn-accent" :disabled="applyingAll" @click="applyAll">
-        <Icon name="download" :size="15" />
+      <button v-if="outdated.length" class="btn-accent" :disabled="applyingAll || busy != null" @click="applyAll">
+        <Icon :name="applyingAll ? 'refresh' : 'download'" :size="15" :class="applyingAll && 'animate-spin'" />
         Update all ({{ outdated.length }})
       </button>
     </template>
@@ -118,8 +118,8 @@ onMounted(load)
             </td>
             <td class="px-5 py-3 text-right">
               <button v-if="item.update_available" class="btn-accent !py-1.5 !px-3"
-                      :disabled="busy === item.id" @click="applyOne(item)">
-                <Icon name="download" :size="14" :class="busy === item.id && 'animate-spin'" />
+                      :disabled="busy != null || applyingAll" @click="applyOne(item)">
+                <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
                 Update
               </button>
             </td>
