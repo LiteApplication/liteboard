@@ -77,8 +77,14 @@ class RegistryAuth:
 
     def __init__(self, config_path: str | None = None) -> None:
         self._auths: dict[str, str] = {}
+        # 1. Load from the read-only Docker secret path (if specified)
         if config_path and Path(config_path).is_file():
             self._load(Path(config_path))
+        # 2. Load from the mutable config path in the data directory
+        from ..config import data_dir
+        mutable_path = data_dir() / "registry_config.json"
+        if mutable_path.is_file():
+            self._load(mutable_path)
 
     def _load(self, path: Path) -> None:
         try:
@@ -95,6 +101,59 @@ class RegistryAuth:
 
     def basic_for(self, registry: str) -> str | None:
         return self._auths.get(_normalise_host(registry))
+
+    @staticmethod
+    def write_credential(config_path: str, registry: str, username: str, password: str) -> None:
+        """Write registry credentials to a Docker config.json formatted file."""
+        path = Path(config_path)
+        data = {}
+        if path.is_file():
+            try:
+                data = json.loads(path.read_text()) or {}
+            except (json.JSONDecodeError, OSError):
+                data = {}
+        
+        if "auths" not in data:
+            data["auths"] = {}
+            
+        raw = f"{username}:{password}"
+        token = base64.b64encode(raw.encode()).decode()
+        
+        normalized = _normalise_host(registry)
+        data["auths"][normalized] = {"auth": token}
+        
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2))
+
+
+async def verify_credentials(registry: str, username: str, password: str) -> bool:
+    """Attempt to contact https://{registry}/v2/ with credentials to verify them."""
+    host = _normalise_host(registry)
+    if host == _DOCKER_HUB_HOST:
+        host = "registry-1.docker.io"
+        
+    url = f"https://{host}/v2/"
+    raw = f"{username}:{password}"
+    basic = base64.b64encode(raw.encode()).decode()
+    
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return True
+            if resp.status_code == 401:
+                www_auth = resp.headers.get("WWW-Authenticate", "")
+                if www_auth.lower().startswith("bearer "):
+                    token = await _get_bearer_token(client, www_auth, basic)
+                    if token:
+                        resp2 = await client.get(url, headers={"Authorization": f"Bearer {token}"})
+                        return resp2.status_code == 200
+                else:
+                    resp2 = await client.get(url, headers={"Authorization": f"Basic {basic}"})
+                    return resp2.status_code == 200
+            return resp.status_code == 200
+        except Exception:
+            return False
 
 
 def _normalise_host(host: str) -> str:

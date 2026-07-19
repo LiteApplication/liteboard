@@ -56,3 +56,26 @@ def test_registry_auth_from_config(tmp_path):
     # Docker Hub aliases normalise together.
     hub = auth.basic_for("registry-1.docker.io")
     assert hub == base64.b64encode(b"hubuser:hubpass").decode()
+
+
+def test_registry_auth_write_and_merge(tmp_path, monkeypatch):
+    # Mock data_dir() to use a temp directory
+    monkeypatch.setattr("liteboard.config.data_dir", lambda: tmp_path)
+    
+    # 1. Create a "secret" config path representing the read-only config
+    secret_cfg = tmp_path / "secret_config.json"
+    secret_token = base64.b64encode(b"secretuser:secretpass").decode()
+    secret_cfg.write_text(json.dumps({
+        "auths": {
+            "ghcr.io": {"auth": secret_token}
+        }
+    }))
+    
+    # 2. Write a credential using RegistryAuth.write_credential to the mutable path
+    mutable_cfg = tmp_path / "registry_config.json"
+    RegistryAuth.write_credential(str(mutable_cfg), "registry.example.com", "user", "pass")
+    
+    # 3. Instantiate RegistryAuth and verify it merges both
+    auth = RegistryAuth(str(secret_cfg))
+    assert auth.basic_for("ghcr.io") == secret_token
+    assert auth.basic_for("registry.example.com") == base64.b64encode(b"user:pass").decode()

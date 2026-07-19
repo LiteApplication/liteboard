@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import Icon from '../components/Icon.vue'
+import RegistryLoginModal from '../components/RegistryLoginModal.vue'
 import { api } from '../lib/api'
 import { shortDigest } from '../lib/format'
 
@@ -10,6 +11,7 @@ const loading = ref(true)
 const error = ref('')
 const busy = ref(null) // service id currently applying
 const applyingAll = ref(false)
+const showLogin = ref(false)
 
 const outdated = computed(() => items.value.filter((i) => i.update_available))
 
@@ -63,6 +65,9 @@ onMounted(load)
 <template>
   <PageHeader title="Updates" subtitle="Image freshness across the registry">
     <template #actions>
+      <button class="btn-ghost" @click="showLogin = true">
+        <Icon name="logout" :size="15" /> Registry Login
+      </button>
       <button class="btn-ghost" :disabled="loading" @click="load">
         <Icon name="refresh" :size="15" :class="loading && 'animate-spin'" /> Refresh
       </button>
@@ -128,4 +133,6 @@ onMounted(load)
       </table>
     </div>
   </div>
+
+  <RegistryLoginModal v-if="showLogin" @close="showLogin = false; load()" />
 </template>

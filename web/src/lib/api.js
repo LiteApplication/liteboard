@@ -37,6 +37,7 @@ export const api = {
   networks: () => request('/api/networks'),
   daemonVersion: () => request('/api/daemons/version'),
   pushDaemonUpdate: () => request('/api/daemons/push-update', { method: 'POST' }),
+  registryLogin: (payload) => request('/api/registry/login', { method: 'POST', body: JSON.stringify(payload) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
 }
 

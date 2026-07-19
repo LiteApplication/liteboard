@@ -92,6 +92,28 @@ async def apply_all():
     return {"ok": True, "applied": applied, "count": len(applied)}
 
 
+from pydantic import BaseModel
+
+class RegistryLoginRequest(BaseModel):
+    registry: str
+    username: str
+    password: str
+
+@router.post("/registry/login")
+async def registry_login(req: RegistryLoginRequest):
+    from ..registry.manifest import verify_credentials, RegistryAuth
+    # Verify credentials
+    ok = await verify_credentials(req.registry, req.username, req.password)
+    if not ok:
+        raise HTTPException(400, "Invalid credentials or registry unreachable")
+    
+    # Save the credentials
+    from ..config import data_dir
+    mutable_path = data_dir() / "registry_config.json"
+    RegistryAuth.write_credential(str(mutable_path), req.registry, req.username, req.password)
+    return {"ok": True}
+
+
 @router.get("/nodes")
 async def nodes():
     state = get_state()
