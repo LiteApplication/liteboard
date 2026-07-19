@@ -1,0 +1,2 @@
+psutil>=5.9
+cryptography>=42.0

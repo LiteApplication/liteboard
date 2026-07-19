@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #app { height: 100%; }
+  body {
+    @apply bg-canvas text-slate-200 font-sans antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 15% -10%, rgba(45, 212, 191, 0.08), transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(96, 165, 250, 0.06), transparent 55%);
+    background-attachment: fixed;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface/80 backdrop-blur-sm border border-border/70 rounded-2xl shadow-card;
+  }
+  .card-hover {
+    @apply transition duration-200 hover:border-accent/40 hover:shadow-glow;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium
+           transition duration-150 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-accent {
+    @apply btn bg-accent text-slate-900 hover:bg-accent-glow shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-surface-2 text-slate-300 border border-border hover:border-accent/40 hover:text-white;
+  }
+  .stat-value { @apply text-3xl font-semibold tracking-tight tabular-nums; }
+  .label { @apply text-xs uppercase tracking-wider text-slate-500 font-medium; }
+}

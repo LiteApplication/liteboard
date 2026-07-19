@@ -1,0 +1,20 @@
+# Secrets — never commit
+.env
+secrets/
+
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Node / build output
+web/node_modules/
+web/dist/
+server/liteboard/daemon_dist/src/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

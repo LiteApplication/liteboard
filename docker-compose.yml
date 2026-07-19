@@ -1,0 +1,81 @@
+# LiteBoard — Docker Swarm stack.
+#   docker stack deploy -c docker-compose.yml liteboard
+#
+# Requires (see README):
+#   - swarm secret  liteboard_signing_key   (Ed25519 private key, from `make keygen`)
+#   - optional secret liteboard_registry_creds (a Docker config.json for private repos)
+#   - a .env file providing OIDC settings + LITEBOARD_SERVER_PUBKEY
+version: "3.8"
+
+services:
+  server:
+    image: ${LITEBOARD_IMAGE:-liteboard/server:latest}
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    networks: [liteboard]
+    ports:
+      - target: 8000
+        published: ${LITEBOARD_PORT:-8000}
+        protocol: tcp
+        mode: ingress
+    environment:
+      LITEBOARD_BASE_URL: ${LITEBOARD_BASE_URL}
+      LITEBOARD_SESSION_SECRET: ${LITEBOARD_SESSION_SECRET}
+      LITEBOARD_OIDC_ISSUER: ${LITEBOARD_OIDC_ISSUER}
+      LITEBOARD_OIDC_CLIENT_ID: ${LITEBOARD_OIDC_CLIENT_ID}
+      LITEBOARD_OIDC_CLIENT_SECRET: ${LITEBOARD_OIDC_CLIENT_SECRET}
+      LITEBOARD_OIDC_REQUIRED_GROUP: ${LITEBOARD_OIDC_REQUIRED_GROUP:-}
+      LITEBOARD_DAEMON_PORT: ${LITEBOARD_DAEMON_PORT:-9187}
+      LITEBOARD_DAEMON_SCHEME: http
+      LITEBOARD_POLL_INTERVAL: ${LITEBOARD_POLL_INTERVAL:-5}
+      LITEBOARD_DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    secrets:
+      - liteboard_signing_key
+      - liteboard_registry_creds
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+
+  daemon:
+    image: ${LITEBOARD_DAEMON_IMAGE:-liteboard/daemon:latest}
+    build:
+      context: ./daemon
+      dockerfile: Dockerfile
+    # One instance per node.
+    environment:
+      LITEBOARD_SERVER_PUBKEY: ${LITEBOARD_SERVER_PUBKEY}
+      LITEBOARD_DAEMON_PORT: ${LITEBOARD_DAEMON_PORT:-9187}
+      LITEBOARD_DAEMON_BIND: 0.0.0.0
+      LITEBOARD_PROCFS: /host/proc
+      LITEBOARD_DOCKER_SOCK: /var/run/docker.sock
+      LITEBOARD_NODE_NAME: "{{.Node.Hostname}}"
+    # Host-mode publish so the server reaches each daemon at <node-ip>:PORT.
+    ports:
+      - target: ${LITEBOARD_DAEMON_PORT:-9187}
+        published: ${LITEBOARD_DAEMON_PORT:-9187}
+        protocol: tcp
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+    deploy:
+      mode: global
+      restart_policy:
+        condition: any
+
+networks:
+  liteboard:
+    driver: overlay
+    attachable: true
+
+secrets:
+  liteboard_signing_key:
+    external: true
+  liteboard_registry_creds:
+    external: true
