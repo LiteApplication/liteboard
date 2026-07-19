@@ -54,14 +54,23 @@ jobs:
         run: npm run build
 
   docker-build:
-    name: Build images
-    runs-on: ubuntu-latest
+    name: Build images (${{ matrix.arch }})
     needs: [server-tests, web-build]
+    # Native builders per arch — no QEMU emulation.
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     env:
       REGISTRY: ghcr.io
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -83,22 +92,88 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build each arch natively and push by digest; the merge job below
+      # assembles the multi-arch manifest list under the :latest tag.
       - name: Build server image
+        id: server
         uses: docker/build-push-action@v6
         with:
           context: .
           file: server/Dockerfile
-          push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.img.outputs.prefix }}/server:latest
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.img.outputs.prefix }}/server,push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' }}
+          cache-from: type=gha,scope=server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
 
       - name: Build daemon image
+        id: daemon
         uses: docker/build-push-action@v6
         with:
           context: ./daemon
           file: daemon/Dockerfile
-          push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.img.outputs.prefix }}/daemon:latest
-          cache-from: type=gha,scope=daemon
-          cache-to: type=gha,mode=max,scope=daemon
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.img.outputs.prefix }}/daemon,push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' }}
+          cache-from: type=gha,scope=daemon-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=daemon-${{ matrix.arch }}
+
+      # Export digests so the merge job can reference each arch's image.
+      - name: Export digests
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p /tmp/digests/server /tmp/digests/daemon
+          touch "/tmp/digests/server/${SERVER_DIGEST#sha256:}"
+          touch "/tmp/digests/daemon/${DAEMON_DIGEST#sha256:}"
+        env:
+          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
+          DAEMON_DIGEST: ${{ steps.daemon.outputs.digest }}
+
+      - name: Upload digests
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+          if-no-files-found: error
+
+  docker-manifest:
+    name: Merge multi-arch manifests
+    needs: docker-build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image prefix
+        id: img
+        run: echo "prefix=${REGISTRY}/${GITHUB_REPOSITORY@L}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      # Assemble one manifest list per image from the per-arch digests.
+      - name: Create manifest lists
+        run: |
+          for image in server daemon; do
+            repo="${{ steps.img.outputs.prefix }}/${image}"
+            docker buildx imagetools create -t "${repo}:latest" \
+              $(printf "${repo}@sha256:%s " $(ls "/tmp/digests/${image}"))
+            docker buildx imagetools inspect "${repo}:latest"
+          done
