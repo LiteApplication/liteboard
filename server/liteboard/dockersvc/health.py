@@ -85,6 +85,22 @@ def classify_service(
     desired = _desired_count(service)
     running_count = len(running)
 
+    # Transitioning tasks (desired to run but not yet running)
+    transitioning = []
+    for t in tasks:
+        desired_state = t.get("DesiredState")
+        status = t.get("Status") or {}
+        state = status.get("State")
+        if desired_state == _RUNNING and state != _RUNNING:
+            transitioning.append({
+                "slot": t.get("Slot"),
+                "node_id": t.get("NodeID"),
+                "state": state,
+                "message": status.get("Message"),
+                "err": status.get("Err"),
+            })
+    transitioning.sort(key=lambda x: (x["slot"] or 0, x["node_id"] or ""))
+
     # Recent failures for crash-loop detection.
     recent_failures = []
     last_error = None
@@ -139,6 +155,7 @@ def classify_service(
         "recent_failures": len(recent_failures),
         "last_error": last_error if state != "healthy" else None,
         "last_exit_code": last_exit_code if state != "healthy" else None,
+        "transitioning": transitioning,
         "labels": service.get("labels", {}),
     }
 

@@ -149,3 +149,18 @@ def test_overview_ordering_and_counts():
     assert ov["counts"]["crash-loop"] == 1
     assert ov["counts"]["degraded"] == 1
     assert ov["counts"]["healthy"] == 1
+
+
+def test_transitioning_tasks_extracted():
+    # If a task is desired to run but is not yet running, it should be listed in transitioning.
+    tasks = [
+        {"DesiredState": "running", "Slot": 1, "NodeID": "n1", "Status": {"State": "preparing", "Message": "pulling image"}},
+        {"DesiredState": "running", "Slot": 2, "NodeID": "n1", "Status": {"State": "running"}},
+    ]
+    svc = _service("web", replicas=2, tasks=tasks)
+    result = health.classify_service(svc)
+    assert result["state"] == "degraded"
+    assert len(result["transitioning"]) == 1
+    assert result["transitioning"][0]["slot"] == 1
+    assert result["transitioning"][0]["state"] == "preparing"
+    assert result["transitioning"][0]["message"] == "pulling image"

@@ -58,6 +58,17 @@ async function redeploy() {
         ⚠ {{ s.last_error }}
         <span v-if="s.last_exit_code != null" class="text-slate-500">(exit {{ s.last_exit_code }})</span>
       </div>
+      <div v-if="s.transitioning && s.transitioning.length > 0" class="mt-2 space-y-1">
+        <div v-for="t in s.transitioning" :key="t.slot || t.node_id" class="flex items-center gap-2 text-xs text-slate-400">
+          <Icon name="refresh" :size="12" class="animate-spin text-accent" />
+          <span class="font-medium text-slate-300">
+            Task {{ s.mode === 'global' ? `(Node: ${t.node_id?.slice(0, 8) || '?'})` : `#${t.slot}` }}:
+          </span>
+          <span class="capitalize text-accent font-semibold">{{ t.state }}</span>
+          <span v-if="t.message" class="text-slate-500">({{ t.message }})</span>
+          <span v-if="t.err" class="text-critical/90">({{ t.err }})</span>
+        </div>
+      </div>
       <div v-if="redeployError" class="text-xs text-critical/90 mt-1.5 truncate">
         ⚠ {{ redeployError }}
       </div>
