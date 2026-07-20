@@ -51,7 +51,9 @@ async def redeploy_service(service_id: str):
 @router.get("/updates")
 async def list_updates():
     services = await asyncio.to_thread(swarm.list_services_with_tasks)
-    return {"services": await updates.check_updates(services)}
+    checked = await updates.check_updates(services)
+    registries_needing_auth = sorted({s["registry"] for s in checked if s["status"] == "auth_required"})
+    return {"services": checked, "registries_needing_auth": registries_needing_auth}
 
 
 @router.post("/updates/{service_id}/apply")
@@ -111,11 +113,40 @@ async def registry_login(req: RegistryLoginRequest):
     ok = await verify_credentials(req.registry, req.username, req.password)
     if not ok:
         raise HTTPException(400, "Invalid credentials or registry unreachable")
-    
+
     # Save the credentials
     from ..config import data_dir
     mutable_path = data_dir() / "registry_config.json"
     RegistryAuth.write_credential(str(mutable_path), req.registry, req.username, req.password)
+    return {"ok": True}
+
+
+@router.get("/registry/list")
+async def registry_list():
+    from ..config import get_settings
+    from ..registry.manifest import RegistryAuth, check_stored_auth
+
+    settings = get_settings()
+    auth = RegistryAuth(settings.registry_config_file)
+    entries = auth.list_entries()
+
+    async def _with_validity(entry: dict) -> dict:
+        entry["valid"] = await check_stored_auth(entry["registry"], auth.basic_for(entry["registry"]))
+        return entry
+
+    entries = await asyncio.gather(*(_with_validity(e) for e in entries))
+    return {"registries": list(entries)}
+
+
+@router.delete("/registry/{registry}")
+async def registry_logout(registry: str):
+    from ..config import data_dir
+    from ..registry.manifest import RegistryAuth
+
+    mutable_path = data_dir() / "registry_config.json"
+    removed = RegistryAuth.remove_credential(str(mutable_path), registry)
+    if not removed:
+        raise HTTPException(404, "no removable credential found for that registry")
     return {"ok": True}
 
 

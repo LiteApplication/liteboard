@@ -38,6 +38,8 @@ export const api = {
   daemonVersion: () => request('/api/daemons/version'),
   pushDaemonUpdate: () => request('/api/daemons/push-update', { method: 'POST' }),
   registryLogin: (payload) => request('/api/registry/login', { method: 'POST', body: JSON.stringify(payload) }),
+  registryList: () => request('/api/registry/list'),
+  registryLogout: (registry) => request(`/api/registry/${encodeURIComponent(registry)}`, { method: 'DELETE' }),
   logout: () => request('/auth/logout', { method: 'POST' }),
 }
 

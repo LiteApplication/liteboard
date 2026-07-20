@@ -13,6 +13,8 @@ const error = ref('')
 const busy = ref(null) // service id currently applying
 const applyingAll = ref(false)
 const showLogin = ref(false)
+const loginPrefill = ref('')
+const authSuggestions = ref([])
 
 const outdated = computed(() => items.value.filter((i) => i.update_available))
 
@@ -20,12 +22,19 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    items.value = (await api.updates()).services
+    const res = await api.updates()
+    items.value = res.services
+    authSuggestions.value = res.registries_needing_auth || []
   } catch (e) {
     error.value = e.message
   } finally {
     loading.value = false
   }
+}
+
+function openLogin(registry = '') {
+  loginPrefill.value = registry
+  showLogin.value = true
 }
 
 async function applyOne(item) {
@@ -77,6 +86,7 @@ const statusMeta = {
   current: { label: 'Up to date', cls: 'bg-healthy/15 text-healthy' },
   unpinned: { label: 'Unpinned', cls: 'bg-surface-2 text-slate-400' },
   unknown: { label: 'Unknown', cls: 'bg-surface-2 text-slate-500' },
+  auth_required: { label: 'Needs registry login', cls: 'bg-critical/15 text-critical' },
 }
 
 onMounted(load)
@@ -85,7 +95,7 @@ onMounted(load)
 <template>
   <PageHeader title="Updates" subtitle="Image freshness across the registry">
     <template #actions>
-      <button class="btn-ghost" @click="showLogin = true">
+      <button class="btn-ghost" @click="openLogin()">
         <Icon name="logout" :size="15" /> Registry Login
       </button>
       <button class="btn-ghost" :disabled="loading" @click="load">
@@ -100,6 +110,24 @@ onMounted(load)
 
   <div class="p-8 space-y-4">
     <div v-if="error" class="card border-critical/30 p-3 text-sm text-critical">{{ error }}</div>
+
+    <div v-if="authSuggestions.length" class="card border-critical/30 p-4 flex flex-wrap items-center gap-3">
+      <Icon name="lock" :size="18" class="text-critical shrink-0" />
+      <div class="text-sm text-slate-300">
+        {{ authSuggestions.length === 1 ? 'A registry lookup' : `${authSuggestions.length} registry lookups` }}
+        failed as unauthorized. Log in to continue checking for updates.
+      </div>
+      <div class="flex flex-wrap gap-2 ml-auto">
+        <button
+          v-for="reg in authSuggestions"
+          :key="reg"
+          class="btn-ghost !py-1.5 !px-3"
+          @click="openLogin(reg)"
+        >
+          <Icon name="logout" :size="14" /> Log in to {{ reg }}
+        </button>
+      </div>
+    </div>
 
     <div v-if="loading" class="text-center py-16 text-slate-500">
       <Icon name="refresh" :size="28" class="mx-auto mb-3 animate-spin" /> Checking registries…
@@ -152,6 +180,10 @@ onMounted(load)
                 <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
                 Pin
               </button>
+              <button v-else-if="item.status === 'auth_required'" class="btn-ghost !py-1.5 !px-3"
+                      @click="openLogin(item.registry)">
+                <Icon name="lock" :size="14" /> Log in
+              </button>
             </td>
           </tr>
         </tbody>
@@ -159,5 +191,5 @@ onMounted(load)
     </div>
   </div>
 
-  <RegistryLoginModal v-if="showLogin" @close="showLogin = false; load()" />
+  <RegistryLoginModal v-if="showLogin" :prefill="loginPrefill" @close="showLogin = false; load()" />
 </template>

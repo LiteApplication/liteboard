@@ -79,3 +79,41 @@ def test_registry_auth_write_and_merge(tmp_path, monkeypatch):
     auth = RegistryAuth(str(secret_cfg))
     assert auth.basic_for("ghcr.io") == secret_token
     assert auth.basic_for("registry.example.com") == base64.b64encode(b"user:pass").decode()
+
+
+def test_list_entries_reports_username_and_source(tmp_path, monkeypatch):
+    monkeypatch.setattr("liteboard.config.data_dir", lambda: tmp_path)
+
+    secret_cfg = tmp_path / "secret_config.json"
+    secret_token = base64.b64encode(b"secretuser:secretpass").decode()
+    secret_cfg.write_text(json.dumps({"auths": {"ghcr.io": {"auth": secret_token}}}))
+
+    mutable_cfg = tmp_path / "registry_config.json"
+    RegistryAuth.write_credential(str(mutable_cfg), "registry.example.com", "user", "pass")
+
+    auth = RegistryAuth(str(secret_cfg))
+    entries = {e["registry"]: e for e in auth.list_entries()}
+
+    assert entries["ghcr.io"]["username"] == "secretuser"
+    assert entries["ghcr.io"]["source"] == "secret"
+    assert entries["registry.example.com"]["username"] == "user"
+    assert entries["registry.example.com"]["source"] == "mutable"
+
+
+def test_remove_credential(tmp_path):
+    mutable_cfg = tmp_path / "registry_config.json"
+    RegistryAuth.write_credential(str(mutable_cfg), "registry.example.com", "user", "pass")
+    RegistryAuth.write_credential(str(mutable_cfg), "ghcr.io", "user2", "pass2")
+
+    assert RegistryAuth.remove_credential(str(mutable_cfg), "registry.example.com") is True
+    # Removing again is a no-op that reports nothing removed.
+    assert RegistryAuth.remove_credential(str(mutable_cfg), "registry.example.com") is False
+
+    data = json.loads(mutable_cfg.read_text())
+    assert "registry.example.com" not in data["auths"]
+    assert "ghcr.io" in data["auths"]
+
+
+def test_remove_credential_missing_file(tmp_path):
+    missing = tmp_path / "does_not_exist.json"
+    assert RegistryAuth.remove_credential(str(missing), "ghcr.io") is False

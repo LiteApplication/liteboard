@@ -31,9 +31,12 @@ async def _check_one(
     image = service["image"]
     base, running_digest = _split_digest(image)
     ref = parse_image_ref(image)
-    remote_digest = await get_remote_digest(ref, auth, client=client)
+    remote_digest, auth_required = await get_remote_digest(ref, auth, client=client)
 
-    if remote_digest is None:
+    if auth_required:
+        status = "auth_required"
+        update_available = False
+    elif remote_digest is None:
         status = "unknown"
         update_available = False
     elif running_digest is None:
