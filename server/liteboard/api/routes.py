@@ -29,10 +29,15 @@ async def overview():
 
 
 @router.get("/services/{service_id}/logs")
-async def service_logs(service_id: str):
-    """Logs of the service's most recent task ("last session" — start to crash)."""
+async def service_logs(service_id: str, tail: int = 300, since: float | None = None):
+    """Logs of the service's most recent task ("last session" — start to crash).
+
+    ``tail`` grows on "load older" (scroll up); ``since`` (a UNIX timestamp,
+    typically the last-seen line's ``ts``) is used instead to poll for newly
+    appended lines without re-reading the whole session.
+    """
     try:
-        return await asyncio.to_thread(swarm.service_logs, service_id)
+        return await asyncio.to_thread(swarm.service_logs, service_id, tail=tail, since_ts=since)
     except Exception as exc:  # noqa: BLE001  (docker-py NotFound etc.)
         raise HTTPException(404, f"could not fetch logs: {exc}")
 

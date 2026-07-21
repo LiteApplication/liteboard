@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import threading
 from functools import lru_cache
 
@@ -15,6 +16,12 @@ from ..config import get_settings
 # can find it to inject the signing public key.
 DAEMON_SERVICE_LABEL = "liteboard.role=daemon"
 _PUBKEY_ENV = "LITEBOARD_SERVER_PUBKEY"
+
+# Hard cap on lines fetched from Docker in one call — logs are live-only (no
+# database), so "load older" just re-asks Docker for a bigger tail each time.
+MAX_LOG_TAIL = 20000
+
+_LOG_LINE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T[\d:.]+Z) (.*)$")
 
 
 @lru_cache
@@ -174,29 +181,61 @@ def _demux_log_stream(raw: bytes) -> str:
     return "".join(out)
 
 
-def service_logs(service_id: str, tail: int = 5000) -> dict:
-    """Return the logs of a service's most recent task ("last session").
+def _parse_log_lines(text: str) -> list[dict]:
+    """Split demuxed log text into ``{ts, text}`` records.
 
-    For a crash-looping service this is the run that just crashed: we scope the
-    stream to ``since`` the newest task's creation time so older, already-dead
-    sessions are excluded, and read up to ``tail`` lines from that point.
+    Docker prefixes every line with an RFC3339-nano timestamp (``timestamps=
+    True``); splitting per-line lets the frontend render/scroll without
+    re-parsing, and gives us a cursor (last line's ``ts``) for incremental
+    polling.
+    """
+    if not text:
+        return []
+    out: list[dict] = []
+    for line in text.split("\n"):
+        if not line:
+            continue
+        m = _LOG_LINE_RE.match(line)
+        if m:
+            out.append({"ts": m.group(1), "text": m.group(2)})
+        else:
+            out.append({"ts": None, "text": line})
+    return out
+
+
+def service_logs(service_id: str, tail: int = 300, since_ts: float | None = None) -> dict:
+    """Return logs of a service's most recent task ("last session").
+
+    For a crash-looping service this is the run that just crashed. With
+    ``since_ts`` unset (initial load / "load older" on scroll), the stream is
+    scoped to ``since`` the newest task's creation time so older, already-dead
+    sessions are excluded, and up to ``tail`` lines are read from that point —
+    callers page further back in history by re-asking with a bigger ``tail``
+    (there is no server-side log cache, this is live-only). With ``since_ts``
+    set (polling for newly-appended lines), it's used verbatim as the Docker
+    ``since`` cursor instead of the session start.
     """
     from .health import _parse_ts  # local import: avoid a module import cycle
+
+    tail = max(1, min(tail, MAX_LOG_TAIL))
 
     client = get_client()
     with _lock:
         svc = client.services.get(service_id)
         name = svc.attrs.get("Spec", {}).get("Name")
-        tasks = svc.tasks()
         started = None
-        if tasks:
-            latest = max(tasks, key=lambda t: t.get("CreatedAt") or "")
-            started = _parse_ts(latest.get("CreatedAt"))
         kwargs = dict(stdout=True, stderr=True, timestamps=True, tail=tail)
-        if started is not None:
-            # `since` is a UNIX timestamp (int); back off a couple of seconds so
-            # the very first lines of the session aren't clipped.
-            kwargs["since"] = int(started.timestamp()) - 2
+        if since_ts is not None:
+            kwargs["since"] = int(since_ts)
+        else:
+            tasks = svc.tasks()
+            if tasks:
+                latest = max(tasks, key=lambda t: t.get("CreatedAt") or "")
+                started = _parse_ts(latest.get("CreatedAt"))
+            if started is not None:
+                # back off a couple of seconds so the very first lines of the
+                # session aren't clipped.
+                kwargs["since"] = int(started.timestamp()) - 2
         raw = svc.logs(**kwargs)
 
     if hasattr(raw, "read"):  # stream object
@@ -204,10 +243,14 @@ def service_logs(service_id: str, tail: int = 5000) -> dict:
     elif not isinstance(raw, (bytes, bytearray)):  # generator of chunks
         raw = b"".join(raw)
 
+    lines = _parse_log_lines(_demux_log_stream(bytes(raw)).rstrip("\n"))
+
     return {
         "service": name,
-        "logs": _demux_log_stream(bytes(raw)).rstrip("\n"),
+        "logs": lines,
         "since": started.isoformat() if started else None,
+        # A full page came back, so there may be more further back in history.
+        "has_more": since_ts is None and len(lines) >= tail,
     }
 
 

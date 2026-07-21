@@ -22,6 +22,12 @@ async function request(path, options = {}) {
   return res.json()
 }
 
+function qs(params) {
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null)
+  if (!entries.length) return ''
+  return '?' + new URLSearchParams(entries).toString()
+}
+
 export const api = {
   setupStatus: () => request('/api/setup/status'),
   submitSetup: (payload) => request('/api/setup', { method: 'POST', body: JSON.stringify(payload) }),
@@ -30,7 +36,7 @@ export const api = {
   updates: () => request('/api/updates'),
   applyUpdate: (id) => request(`/api/updates/${id}/apply`, { method: 'POST' }),
   applyAll: () => request('/api/updates/apply-all', { method: 'POST' }),
-  serviceLogs: (id) => request(`/api/services/${id}/logs`),
+  serviceLogs: (id, params = {}) => request(`/api/services/${id}/logs${qs(params)}`),
   redeployService: (id) => request(`/api/services/${id}/redeploy`, { method: 'POST' }),
   nodes: () => request('/api/nodes'),
   nodeJoinInfo: () => request('/api/nodes/join-info'),
