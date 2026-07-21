@@ -2,8 +2,9 @@
 import { computed, ref } from 'vue'
 import HealthBadge from './HealthBadge.vue'
 import Icon from './Icon.vue'
-import LogsModal from './LogsModal.vue'
+import ServiceDetailModal from './ServiceDetailModal.vue'
 import { api } from '../lib/api'
+import { nodeName } from '../lib/store'
 
 const props = defineProps({ service: Object })
 const s = computed(() => props.service)
@@ -13,9 +14,8 @@ const replicaText = computed(() =>
 )
 const replicaBad = computed(() => s.value.desired != null && s.value.running < s.value.desired)
 
-// Crash-looping rows open their logs on click ("last session" up to the crash).
-const canViewLogs = computed(() => s.value.state === 'crash-loop')
-const showLogs = ref(false)
+const nodeNames = computed(() => (s.value.running_node_ids || []).map(nodeName))
+const showDetail = ref(false)
 
 const redeploying = ref(false)
 const redeployError = ref('')
@@ -38,22 +38,18 @@ async function redeploy() {
 
 <template>
   <div
-    class="card card-hover p-4 flex items-center gap-4 animate-fadeUp"
-    :class="canViewLogs && 'cursor-pointer'"
-    @click="canViewLogs && (showLogs = true)"
+    class="card card-hover p-4 flex items-center gap-4 animate-fadeUp cursor-pointer"
+    @click="showDetail = true"
   >
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2.5">
         <span class="font-medium text-slate-100 truncate">{{ s.name }}</span>
         <HealthBadge :state="s.state" />
-        <span
-          v-if="canViewLogs"
-          class="hidden sm:inline-flex items-center gap-1 text-xs text-slate-500"
-        >
-          <Icon name="terminal" :size="13" /> view logs
-        </span>
       </div>
       <div class="text-xs text-slate-500 font-mono truncate mt-1">{{ s.image }}</div>
+      <div v-if="nodeNames.length" class="text-xs text-slate-500 truncate mt-1">
+        <Icon name="server" :size="12" class="inline -mt-0.5 mr-1" />{{ nodeNames.join(', ') }}
+      </div>
       <div v-if="s.last_error && s.state !== 'healthy'" class="text-xs text-critical/90 mt-1.5 truncate">
         ⚠ {{ s.last_error }}
         <span v-if="s.last_exit_code != null" class="text-slate-500">(exit {{ s.last_exit_code }})</span>
@@ -62,7 +58,7 @@ async function redeploy() {
         <div v-for="t in s.transitioning" :key="t.slot || t.node_id" class="flex items-center gap-2 text-xs text-slate-400">
           <Icon name="refresh" :size="12" class="animate-spin text-accent" />
           <span class="font-medium text-slate-300">
-            Task {{ s.mode === 'global' ? `(Node: ${t.node_id?.slice(0, 8) || '?'})` : `#${t.slot}` }}:
+            Task {{ s.mode === 'global' ? `(Node: ${nodeName(t.node_id)})` : `#${t.slot}` }}:
           </span>
           <span class="capitalize text-accent font-semibold">{{ t.state }}</span>
           <span v-if="t.message" class="text-slate-500">({{ t.message }})</span>
@@ -96,5 +92,5 @@ async function redeploy() {
     </button>
   </div>
 
-  <LogsModal v-if="showLogs" :service="s" @close="showLogs = false" />
+  <ServiceDetailModal v-if="showDetail" :service="s" @close="showDetail = false" />
 </template>

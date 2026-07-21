@@ -48,6 +48,7 @@ def test_healthy_service():
     result = health.classify_service(svc)
     assert result["state"] == "healthy"
     assert result["running"] == 2
+    assert result["running_node_ids"] == ["n1", "n2"]
     assert result["desired"] == 2
 
 

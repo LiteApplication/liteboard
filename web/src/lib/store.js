@@ -9,6 +9,15 @@ export const store = reactive({
   updatingServer: false,
 })
 
+// Resolve a Swarm node ID to its live entry ({ node, metrics, reachable, daemon }) or hostname.
+export function nodeEntry(nodeId) {
+  return store.nodes.find((e) => e.node?.id === nodeId) || null
+}
+
+export function nodeName(nodeId) {
+  return nodeEntry(nodeId)?.node?.hostname || (nodeId ? nodeId.slice(0, 8) : '?')
+}
+
 let es = null
 
 export function startStream(onUnauthorized) {

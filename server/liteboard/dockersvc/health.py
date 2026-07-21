@@ -120,6 +120,8 @@ def classify_service(
 
     crash_looping = len(recent_failures) >= CRASH_FAIL_THRESHOLD
 
+    running_node_ids = sorted({t.get("NodeID") for t in running if t.get("NodeID")})
+
     # A rollout is in flight when Docker reports one, or when the server itself
     # just triggered a redeploy/update (tracked in-memory for a grace window).
     docker_updating = (service.get("update_status") or {}).get("State") in {
@@ -156,6 +158,7 @@ def classify_service(
         "last_error": last_error if state != "healthy" else None,
         "last_exit_code": last_exit_code if state != "healthy" else None,
         "transitioning": transitioning,
+        "running_node_ids": running_node_ids,
         "labels": service.get("labels", {}),
     }
 
