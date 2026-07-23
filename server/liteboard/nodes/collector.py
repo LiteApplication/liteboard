@@ -34,6 +34,11 @@ class NodeCollector:
         if self._task is None:
             self._stop.clear()
             self._task = asyncio.create_task(self._run())
+            # Image counts don't change fast enough to warrant repolling on
+            # the metrics cadence (and computing them is comparatively
+            # expensive) — fetch once at startup, then only again when the UI
+            # explicitly asks via poll_images_once() (e.g. on page reload).
+            asyncio.create_task(self.poll_images_once())
 
     async def stop(self) -> None:
         self._stop.set()
@@ -92,14 +97,11 @@ class NodeCollector:
             network_results = await asyncio.gather(
                 *(self._fetch(client, n, "/networks") for n in nodes)
             )
-            image_results = await asyncio.gather(
-                *(self._fetch(client, n, "/images") for n in nodes)
-            )
 
         async with self._lock:
             self._nodes = nodes
-            for node, metrics, version, networks, images in zip(
-                nodes, metric_results, version_results, network_results, image_results
+            for node, metrics, version, networks in zip(
+                nodes, metric_results, version_results, network_results
             ):
                 nid = node["id"]
                 reachable = bool(metrics) and "_error" not in metrics
@@ -112,8 +114,18 @@ class NodeCollector:
                 }
                 if networks and "_error" not in networks:
                     self._networks[nid] = networks
+
+    async def poll_images_once(self) -> None:
+        nodes = await self.nodes()
+        s = self._settings
+        async with httpx.AsyncClient(timeout=s.daemon_timeout) as client:
+            image_results = await asyncio.gather(
+                *(self._fetch(client, n, "/images") for n in nodes)
+            )
+        async with self._lock:
+            for node, images in zip(nodes, image_results):
                 if images and "_error" not in images and "error" not in images:
-                    self._images[nid] = images
+                    self._images[node["id"]] = images
 
     # -- accessors --------------------------------------------------------- #
     async def snapshot(self) -> list[dict]:
@@ -160,7 +172,13 @@ class NodeCollector:
         return results
 
     async def prune_images(self, node_id: str) -> dict:
-        """Remove unused images on a single node's daemon, then refresh its cache."""
+        """Start an unused-image cleanup job on a node's daemon.
+
+        Returns immediately with a job id — the daemon deletes images one at a
+        time in the background instead of blocking on Docker's bulk prune
+        (which can run well past any reasonable request timeout on hosts with
+        many images).
+        """
         node = next((n for n in await self.nodes() if n["id"] == node_id), None)
         if not node:
             return {"error": "node not found"}
@@ -171,15 +189,34 @@ class NodeCollector:
         async with httpx.AsyncClient(timeout=self._settings.daemon_timeout) as client:
             try:
                 resp = await client.post(url, headers=headers)
-                if resp.status_code == 200:
-                    result = resp.json()
-                else:
-                    result = {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+                if resp.status_code == 202:
+                    return resp.json()
+                return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
             except httpx.HTTPError as exc:
-                result = {"error": str(exc)}
-            # Refresh the cached usage so the UI reflects the cleanup immediately.
-            images = await self._fetch(client, node, "/images")
-        if images and "_error" not in images and "error" not in images:
-            async with self._lock:
-                self._images[node_id] = images
-        return result
+                return {"error": str(exc)}
+
+    async def prune_status(self, node_id: str, job_id: str) -> dict:
+        """Poll the progress of a prune job started by :meth:`prune_images`."""
+        node = next((n for n in await self.nodes() if n["id"] == node_id), None)
+        if not node:
+            return {"error": "node not found"}
+        path = f"/images/prune/status?job_id={job_id}"
+        headers = self._signer.sign_headers("GET", path)
+        url = self._daemon_url(node, path)
+        if not url:
+            return {"error": "unreachable"}
+        async with httpx.AsyncClient(timeout=self._settings.daemon_timeout) as client:
+            try:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code != 200:
+                    return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+                status = resp.json()
+            except httpx.HTTPError as exc:
+                return {"error": str(exc)}
+            if status.get("status") == "done":
+                # Refresh the cached usage now that the cleanup is finished.
+                images = await self._fetch(client, node, "/images")
+                if images and "_error" not in images and "error" not in images:
+                    async with self._lock:
+                        self._images[node_id] = images
+        return status

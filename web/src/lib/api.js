@@ -40,7 +40,10 @@ export const api = {
   redeployService: (id) => request(`/api/services/${id}/redeploy`, { method: 'POST' }),
   nodes: () => request('/api/nodes'),
   nodeJoinInfo: () => request('/api/nodes/join-info'),
+  refreshNodeImages: () => request('/api/nodes/images/refresh', { method: 'POST' }),
   pruneNodeImages: (nodeId) => request(`/api/nodes/${nodeId}/images/prune`, { method: 'POST' }),
+  pruneNodeImagesStatus: (nodeId, jobId) =>
+    request(`/api/nodes/${nodeId}/images/prune/status/${jobId}`),
   networks: () => request('/api/networks'),
   daemonVersion: () => request('/api/daemons/version'),
   pushDaemonUpdate: () => request('/api/daemons/push-update', { method: 'POST' }),

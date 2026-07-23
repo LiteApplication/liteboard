@@ -25,6 +25,7 @@ import json
 import os
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -152,6 +153,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, inspect_networks(DOCKER_SOCK))
         elif route == "/images":
             self._send_json(200, images.disk_usage(DOCKER_SOCK))
+        elif route == "/images/prune/status":
+            query = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            job_id = (query.get("job_id") or [""])[0]
+            status = images.job_status(job_id)
+            self._send_json(404 if "error" in status else 200, status)
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -163,7 +169,8 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/update":
             self._handle_update(body)
         elif route == "/images/prune":
-            self._send_json(200, images.prune_unused(DOCKER_SOCK))
+            job_id = images.start_prune(DOCKER_SOCK)
+            self._send_json(202, {"job_id": job_id})
         else:
             self._send_json(404, {"error": "not found"})
 

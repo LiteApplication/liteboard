@@ -119,6 +119,9 @@ def classify_service(
                 last_exit_code = cs.get("ExitCode")
 
     crash_looping = len(recent_failures) >= CRASH_FAIL_THRESHOLD
+    # A single failure in the window isn't a pattern worth flagging — only
+    # surface the count once there's more than one, i.e. a repeat crash.
+    recent_failure_count = len(recent_failures) if len(recent_failures) > 1 else 0
 
     running_node_ids = sorted({t.get("NodeID") for t in running if t.get("NodeID")})
 
@@ -154,7 +157,7 @@ def classify_service(
         "desired": desired,
         "state": state,
         "crash_looping": crash_looping,
-        "recent_failures": len(recent_failures),
+        "recent_failures": recent_failure_count,
         "last_error": last_error if state != "healthy" else None,
         "last_exit_code": last_exit_code if state != "healthy" else None,
         "transitioning": transitioning,

@@ -169,6 +169,19 @@ async def nodes_join_info():
     return info
 
 
+@router.post("/nodes/images/refresh")
+async def refresh_node_images():
+    """Recount image disk-usage across all nodes.
+
+    Counts don't change often, so the collector only polls them once at
+    startup (or right after a prune) rather than on a repeating timer — the
+    frontend calls this once per page load instead.
+    """
+    state = get_state()
+    await state.collector.poll_images_once()
+    return {"ok": True}
+
+
 @router.post("/nodes/{node_id}/images/prune")
 async def prune_node_images(node_id: str):
     state = get_state()
@@ -176,6 +189,15 @@ async def prune_node_images(node_id: str):
     if "error" in result:
         raise HTTPException(502, result["error"])
     return {"ok": True, **result}
+
+
+@router.get("/nodes/{node_id}/images/prune/status/{job_id}")
+async def prune_node_images_status(node_id: str, job_id: str):
+    state = get_state()
+    result = await state.collector.prune_status(node_id, job_id)
+    if "error" in result:
+        raise HTTPException(502, result["error"])
+    return result
 
 
 @router.get("/networks")

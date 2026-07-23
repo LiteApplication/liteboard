@@ -17,18 +17,34 @@ const REF = 100 * 1024 * 1024
 
 const pruning = ref(false)
 const pruneMsg = ref('')
+const pruneProgress = ref(null) // { done, total } while a job is running
 
 async function pruneImages() {
   if (!confirm(`Remove unused images on ${node.value.hostname}? This deletes every image not used by a container on this node.`)) return
   pruning.value = true
   pruneMsg.value = ''
+  pruneProgress.value = { done: 0, total: 0 }
   try {
-    const r = await api.pruneNodeImages(node.value.id)
-    pruneMsg.value = `Freed ${bytes(r.space_reclaimed)} (${r.deleted} image${r.deleted === 1 ? '' : 's'})`
+    const { job_id } = await api.pruneNodeImages(node.value.id)
+    // The daemon deletes images one at a time in the background; poll for
+    // progress instead of blocking on a single long request.
+    let status
+    do {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      status = await api.pruneNodeImagesStatus(node.value.id, job_id)
+      pruneProgress.value = { done: status.done || 0, total: status.total || 0 }
+    } while (status.status === 'running')
+
+    if (status.status === 'error') {
+      pruneMsg.value = `Failed: ${status.error}`
+    } else {
+      pruneMsg.value = `Freed ${bytes(status.space_reclaimed)} (${status.deleted} image${status.deleted === 1 ? '' : 's'})`
+    }
   } catch (e) {
     pruneMsg.value = `Failed: ${e.message}`
   } finally {
     pruning.value = false
+    pruneProgress.value = null
   }
 }
 </script>
@@ -106,10 +122,26 @@ async function pruneImages() {
             @click="pruneImages"
           >
             <Icon name="trash" :size="13" :class="pruning && 'animate-pulse'" />
-            Clean up
+            {{ pruning ? 'Cleaning…' : 'Clean up' }}
           </button>
         </div>
-        <div v-if="pruneMsg" class="text-[10px] text-slate-500 mt-1">{{ pruneMsg }}</div>
+        <div v-if="pruneProgress" class="mt-2">
+          <div class="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+            <div
+              class="h-full bg-accent transition-all duration-300"
+              :style="{ width: pruneProgress.total ? `${(pruneProgress.done / pruneProgress.total) * 100}%` : '8%' }"
+            />
+          </div>
+          <div class="text-[10px] text-slate-500 mt-1 tabular-nums">
+            {{ pruneProgress.total ? `${pruneProgress.done} / ${pruneProgress.total} images` : 'starting…' }}
+          </div>
+        </div>
+        <div v-else-if="pruneMsg" class="text-[10px] text-slate-500 mt-1">{{ pruneMsg }}</div>
+      </div>
+      <div v-else-if="reachable" class="pt-3 border-t border-border/60">
+        <span class="label flex items-center gap-1.5 text-slate-500">
+          <Icon name="disk" :size="13" class="animate-pulse" /> Counting images…
+        </span>
       </div>
     </div>
 

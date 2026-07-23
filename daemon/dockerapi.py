@@ -23,8 +23,14 @@ class UnixHTTPConnection(http.client.HTTPConnection):
         self.sock = sock
 
 
-def request(method: str, path: str, socket_path: str, body: bytes | None = None) -> object:
-    conn = UnixHTTPConnection(socket_path)
+def request(
+    method: str,
+    path: str,
+    socket_path: str,
+    body: bytes | None = None,
+    timeout: float = 5.0,
+) -> object:
+    conn = UnixHTTPConnection(socket_path, timeout=timeout)
     try:
         headers = {"Host": "docker"}
         if body is not None:
@@ -39,9 +45,13 @@ def request(method: str, path: str, socket_path: str, body: bytes | None = None)
         conn.close()
 
 
-def get(path: str, socket_path: str) -> object:
-    return request("GET", path, socket_path)
+def get(path: str, socket_path: str, timeout: float = 5.0) -> object:
+    return request("GET", path, socket_path, timeout=timeout)
 
 
-def post(path: str, socket_path: str, body: bytes | None = None) -> object:
-    return request("POST", path, socket_path, body=body)
+def post(path: str, socket_path: str, body: bytes | None = None, timeout: float = 5.0) -> object:
+    return request("POST", path, socket_path, body=body, timeout=timeout)
+
+
+def delete(path: str, socket_path: str, timeout: float = 5.0) -> object:
+    return request("DELETE", path, socket_path, timeout=timeout)

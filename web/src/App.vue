@@ -42,6 +42,9 @@ onMounted(async () => {
     }
     user.value = await api.me()
     startStream(toLogin)
+    // Image counts are cached server-side and only recomputed on demand —
+    // a fresh page load is our signal that it's worth recounting.
+    api.refreshNodeImages().catch(() => {})
   } catch (e) {
     if (e.status === 401) { toLogin() }
   } finally {
