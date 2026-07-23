@@ -10,35 +10,9 @@ Uses a tiny raw HTTP-over-unix-socket client so the daemon needs no Docker SDK.
 
 from __future__ import annotations
 
-import http.client
-import json
-import socket
 import urllib.parse
 
-
-class _UnixHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, socket_path: str, timeout: float = 5.0) -> None:
-        super().__init__("localhost", timeout=timeout)
-        self._socket_path = socket_path
-
-    def connect(self) -> None:  # noqa: D401
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
-        sock.connect(self._socket_path)
-        self.sock = sock
-
-
-def _docker_get(path: str, socket_path: str) -> object:
-    conn = _UnixHTTPConnection(socket_path)
-    try:
-        conn.request("GET", path, headers={"Host": "docker"})
-        resp = conn.getresponse()
-        data = resp.read()
-        if resp.status >= 400:
-            raise RuntimeError(f"docker api {path} -> {resp.status}: {data[:200]!r}")
-        return json.loads(data)
-    finally:
-        conn.close()
+from dockerapi import get as _docker_get
 
 
 def inspect_networks(socket_path: str = "/var/run/docker.sock") -> dict:

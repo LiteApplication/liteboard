@@ -169,6 +169,15 @@ async def nodes_join_info():
     return info
 
 
+@router.post("/nodes/{node_id}/images/prune")
+async def prune_node_images(node_id: str):
+    state = get_state()
+    result = await state.collector.prune_images(node_id)
+    if "error" in result:
+        raise HTTPException(502, result["error"])
+    return {"ok": True, **result}
+
+
 @router.get("/networks")
 async def networks():
     state = get_state()

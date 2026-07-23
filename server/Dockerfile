@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir .
 
 # Ship the canonical daemon source so the server can serve signed self-updates.
 COPY daemon/liteboard_daemon.py daemon/protocol.py daemon/metrics.py \
-     daemon/netinspect.py daemon/selfupdate.py \
+     daemon/netinspect.py daemon/selfupdate.py daemon/dockerapi.py daemon/images.py \
      ./liteboard/daemon_dist/src/
 
 # Built SPA served as static files.

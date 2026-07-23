@@ -29,12 +29,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+import images
 import protocol
 import selfupdate
 from metrics import MetricsCollector
 from netinspect import inspect_networks
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 INSTALL_DIR = os.path.dirname(os.path.abspath(__file__))
 DOCKER_SOCK = os.environ.get("LITEBOARD_DOCKER_SOCK", "/var/run/docker.sock")
@@ -149,6 +150,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, DAEMON.metrics.snapshot().as_dict())
         elif route == "/networks":
             self._send_json(200, inspect_networks(DOCKER_SOCK))
+        elif route == "/images":
+            self._send_json(200, images.disk_usage(DOCKER_SOCK))
         else:
             self._send_json(404, {"error": "not found"})
 
@@ -159,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/update":
             self._handle_update(body)
+        elif route == "/images/prune":
+            self._send_json(200, images.prune_unused(DOCKER_SOCK))
         else:
             self._send_json(404, {"error": "not found"})
 

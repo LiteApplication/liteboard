@@ -6,7 +6,7 @@ WORKDIR /opt/liteboard
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY liteboard_daemon.py protocol.py metrics.py netinspect.py selfupdate.py ./
+COPY liteboard_daemon.py protocol.py metrics.py netinspect.py selfupdate.py dockerapi.py images.py ./
 
 # Daemon writes updated files into this dir during self-update, so it must be
 # writable by the runtime user.

@@ -23,6 +23,7 @@ class NodeCollector:
         self._settings = settings or get_settings()
         self._metrics: dict[str, dict] = {}
         self._networks: dict[str, dict] = {}
+        self._images: dict[str, dict] = {}
         self._nodes: list[dict] = []
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -91,11 +92,14 @@ class NodeCollector:
             network_results = await asyncio.gather(
                 *(self._fetch(client, n, "/networks") for n in nodes)
             )
+            image_results = await asyncio.gather(
+                *(self._fetch(client, n, "/images") for n in nodes)
+            )
 
         async with self._lock:
             self._nodes = nodes
-            for node, metrics, version, networks in zip(
-                nodes, metric_results, version_results, network_results
+            for node, metrics, version, networks, images in zip(
+                nodes, metric_results, version_results, network_results, image_results
             ):
                 nid = node["id"]
                 reachable = bool(metrics) and "_error" not in metrics
@@ -108,6 +112,8 @@ class NodeCollector:
                 }
                 if networks and "_error" not in networks:
                     self._networks[nid] = networks
+                if images and "_error" not in images and "error" not in images:
+                    self._images[nid] = images
 
     # -- accessors --------------------------------------------------------- #
     async def snapshot(self) -> list[dict]:
@@ -116,7 +122,7 @@ class NodeCollector:
             for node in self._nodes:
                 nid = node["id"]
                 entry = self._metrics.get(nid, {})
-                out.append({"node": node, **entry})
+                out.append({"node": node, **entry, "images": self._images.get(nid)})
             return out
 
     async def networks_by_node(self) -> dict[str, dict]:
@@ -152,3 +158,28 @@ class NodeCollector:
                 except httpx.HTTPError as exc:
                     results.append({"node": node["hostname"], "error": str(exc)})
         return results
+
+    async def prune_images(self, node_id: str) -> dict:
+        """Remove unused images on a single node's daemon, then refresh its cache."""
+        node = next((n for n in await self.nodes() if n["id"] == node_id), None)
+        if not node:
+            return {"error": "node not found"}
+        headers = self._signer.sign_headers("POST", "/images/prune")
+        url = self._daemon_url(node, "/images/prune")
+        if not url:
+            return {"error": "unreachable"}
+        async with httpx.AsyncClient(timeout=self._settings.daemon_timeout) as client:
+            try:
+                resp = await client.post(url, headers=headers)
+                if resp.status_code == 200:
+                    result = resp.json()
+                else:
+                    result = {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            except httpx.HTTPError as exc:
+                result = {"error": str(exc)}
+            # Refresh the cached usage so the UI reflects the cleanup immediately.
+            images = await self._fetch(client, node, "/images")
+        if images and "_error" not in images and "error" not in images:
+            async with self._lock:
+                self._images[node_id] = images
+        return result
