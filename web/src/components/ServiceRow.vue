@@ -5,6 +5,7 @@ import Icon from './Icon.vue'
 import ServiceDetailModal from './ServiceDetailModal.vue'
 import { api } from '../lib/api'
 import { nodeName } from '../lib/store'
+import { ago } from '../lib/format'
 
 const props = defineProps({ service: Object })
 const s = computed(() => props.service)
@@ -32,6 +33,26 @@ async function redeploy() {
     redeployError.value = e.message
   } finally {
     redeploying.value = false
+  }
+}
+
+const clearing = ref(false)
+const cleared = ref(false)
+const clearError = ref('')
+
+async function clearRollout() {
+  if (clearing.value) return
+  clearing.value = true
+  clearError.value = ''
+  try {
+    await api.clearRollout(s.value.id)
+    // Nothing restarts; the advisory disappears once Swarm settles the update
+    // and the SSE stream delivers the next overview.
+    cleared.value = true
+  } catch (e) {
+    clearError.value = e.message
+  } finally {
+    clearing.value = false
   }
 }
 </script>
@@ -64,6 +85,26 @@ async function redeploy() {
           <span v-if="t.message" class="text-slate-500">({{ t.message }})</span>
           <span v-if="t.err" class="text-critical/90">({{ t.err }})</span>
         </div>
+      </div>
+      <div v-if="s.rollout" class="mt-2 flex items-start gap-2 text-xs">
+        <Icon name="pause" :size="12" class="text-degraded mt-0.5 shrink-0" />
+        <div class="min-w-0">
+          <span class="text-degraded font-medium">
+            Rollout paused<span v-if="ago(s.rollout.started_at)"> {{ ago(s.rollout.started_at) }} ago</span>
+          </span>
+          <span v-if="s.rollout.message" class="text-slate-500"> — {{ s.rollout.message }}</span>
+        </div>
+        <button
+          class="shrink-0 text-slate-400 hover:text-accent underline decoration-dotted disabled:opacity-50 disabled:no-underline"
+          :title="'Re-submit the spec unchanged so Swarm settles the rollout — nothing restarts'"
+          :disabled="clearing || cleared"
+          @click.stop="clearRollout"
+        >
+          {{ cleared ? 'clearing…' : clearing ? '…' : 'clear' }}
+        </button>
+      </div>
+      <div v-if="clearError" class="text-xs text-critical/90 mt-1.5 truncate">
+        ⚠ {{ clearError }}
       </div>
       <div v-if="redeployError" class="text-xs text-critical/90 mt-1.5 truncate">
         ⚠ {{ redeployError }}

@@ -38,6 +38,7 @@ export const api = {
   applyAll: () => request('/api/updates/apply-all', { method: 'POST' }),
   serviceLogs: (id, params = {}) => request(`/api/services/${id}/logs${qs(params)}`),
   redeployService: (id) => request(`/api/services/${id}/redeploy`, { method: 'POST' }),
+  clearRollout: (id) => request(`/api/services/${id}/clear-rollout`, { method: 'POST' }),
   nodes: () => request('/api/nodes'),
   nodeJoinInfo: () => request('/api/nodes/join-info'),
   refreshNodeImages: () => request('/api/nodes/images/refresh', { method: 'POST' }),

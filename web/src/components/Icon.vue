@@ -24,6 +24,7 @@ const paths = {
   trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6',
   lock: 'M6 11V7a6 6 0 1112 0v4M5 11h14v10H5z',
   'chevron-down': 'M6 9l6 6 6-6',
+  pause: 'M10 5v14M14 5v14',
 }
 </script>
 

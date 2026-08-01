@@ -53,6 +53,20 @@ async def redeploy_service(service_id: str):
     return {"ok": True}
 
 
+@router.post("/services/{service_id}/clear-rollout")
+async def clear_rollout(service_id: str):
+    """Clear a paused rollout by re-submitting the spec unchanged.
+
+    Deliberately *not* a redeploy: nothing restarts, the stuck ``UpdateStatus``
+    is simply resolved.
+    """
+    try:
+        await asyncio.to_thread(swarm.clear_rollout_status, service_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(404, f"could not clear rollout: {exc}")
+    return {"ok": True}
+
+
 @router.get("/updates")
 async def list_updates():
     services = await asyncio.to_thread(swarm.list_services_with_tasks)

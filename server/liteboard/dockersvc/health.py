@@ -18,6 +18,12 @@ _FAILED_STATES = {"failed", "rejected"}
 CRASH_WINDOW_S = 600
 CRASH_FAIL_THRESHOLD = 3
 
+# Docker never clears ``UpdateStatus.State == "updating"`` when a rollout is
+# interrupted (manager restart, a rejected task that later recovered on its own).
+# Past this age we stop believing it — otherwise a long-settled service reads as
+# "Updating" forever.
+UPDATE_STALE_S = 3600
+
 
 # RFC3339 with optional nanosecond fraction and Z/offset, e.g.
 # 2024-01-01T00:00:00.123456789Z  or  2024-01-01T00:00:00+00:00
@@ -101,6 +107,21 @@ def classify_service(
             })
     transitioning.sort(key=lambda x: (x["slot"] or 0, x["node_id"] or ""))
 
+    # Failures that predate the currently-running generation of their own slot
+    # are history: that slot already recovered from them. Slots with nothing
+    # running keep all their failures (they're the ones that are actually
+    # broken). Identity is the slot for replicated services, the node for
+    # global ones.
+    def slot_key(t: dict) -> object:
+        return t.get("Slot") or t.get("NodeID")
+
+    running_since: dict[object, datetime] = {}
+    for t in running:
+        key = slot_key(t)
+        ts = task_time(t)
+        if ts > running_since.get(key, datetime.min.replace(tzinfo=timezone.utc)):
+            running_since[key] = ts
+
     # Recent failures for crash-loop detection.
     recent_failures = []
     last_error = None
@@ -108,14 +129,20 @@ def classify_service(
     for t in tasks:
         status = t.get("Status") or {}
         state = status.get("State")
-        if state in _FAILED_STATES:
-            ts = _parse_ts(status.get("Timestamp"))
-            if ts and (now - ts).total_seconds() <= CRASH_WINDOW_S:
-                recent_failures.append(t)
-            if last_error is None and status.get("Err"):
-                last_error = status.get("Err")
+        if state not in _FAILED_STATES:
+            continue
+        ts = _parse_ts(status.get("Timestamp"))
+        recovered_at = running_since.get(slot_key(t))
+        if recovered_at is not None and (ts is None or ts <= recovered_at):
+            continue
+        if ts and (now - ts).total_seconds() <= CRASH_WINDOW_S:
+            recent_failures.append(t)
+        if last_error is None and status.get("Err"):
+            last_error = status.get("Err")
             cs = status.get("ContainerStatus") or {}
-            if last_exit_code is None and cs.get("ExitCode") is not None:
+            # Exit 0 on a rejected/failed task carries no signal — the failure
+            # never got as far as running a container.
+            if cs.get("ExitCode"):
                 last_exit_code = cs.get("ExitCode")
 
     crash_looping = len(recent_failures) >= CRASH_FAIL_THRESHOLD
@@ -127,11 +154,36 @@ def classify_service(
 
     # A rollout is in flight when Docker reports one, or when the server itself
     # just triggered a redeploy/update (tracked in-memory for a grace window).
-    docker_updating = (service.get("update_status") or {}).get("State") in {
-        "updating",
-        "paused",
-    }
+    update_status = service.get("update_status") or {}
+    docker_updating = update_status.get("State") in {"updating", "paused"}
+    if docker_updating:
+        # Don't trust a rollout Docker has been "running" for hours — it never
+        # converged and never will (see UPDATE_STALE_S).
+        started = _parse_ts(update_status.get("StartedAt"))
+        if started and (now - started).total_seconds() > UPDATE_STALE_S:
+            docker_updating = False
+    # A converged service with nothing in flight isn't updating, whatever
+    # UpdateStatus still says. `transitioning` keeps a genuine rollout (new task
+    # starting while the old replica still runs) reading as "updating".
+    if (
+        docker_updating
+        and not transitioning
+        and desired is not None
+        and running_count >= desired
+    ):
+        docker_updating = False
     updating = docker_updating or redeploying
+
+    # A rollout Swarm has given up on. It never resolves by itself, so surface
+    # it as an advisory (not a health state — the service may well be running
+    # fine on whatever it settled on) with an action to clear it.
+    rollout = None
+    if update_status.get("State") == "paused" and not updating:
+        rollout = {
+            "state": "paused",
+            "message": update_status.get("Message"),
+            "started_at": update_status.get("StartedAt"),
+        }
 
     # Determine state. An in-flight rollout wins over down/degraded so a service
     # whose tasks are momentarily restarting reads as "updating", not "down".
@@ -161,6 +213,7 @@ def classify_service(
         "last_error": last_error if state != "healthy" else None,
         "last_exit_code": last_exit_code if state != "healthy" else None,
         "transitioning": transitioning,
+        "rollout": rollout,
         "running_node_ids": running_node_ids,
         "labels": service.get("labels", {}),
     }

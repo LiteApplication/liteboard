@@ -120,6 +120,96 @@ def test_docker_update_beats_down():
     assert health.classify_service(svc)["state"] == "updating"
 
 
+def test_stale_docker_update_on_converged_service_is_healthy():
+    # Docker leaves UpdateStatus at "updating" forever when a rollout is
+    # interrupted; a fully-running service must not read as "Updating".
+    running = _running_task()
+    running["Slot"] = 1
+    running["Status"]["Timestamp"] = _ts(_now() - timedelta(hours=29))
+    svc = _service("jellyseerr", replicas=1, tasks=[running])
+    svc["update_status"] = {"State": "updating"}
+    assert health.classify_service(svc)["state"] == "healthy"
+
+
+def test_paused_rollout_is_surfaced_as_advisory():
+    running = _running_task()
+    running["Slot"] = 1
+    running["Status"]["Timestamp"] = _ts(_now() - timedelta(hours=29))
+    svc = _service("jellyseerr", replicas=1, tasks=[running])
+    svc["update_status"] = {
+        "State": "paused",
+        "StartedAt": _ts(_now() - timedelta(days=2)),
+        "Message": "update paused due to failure or early termination of task abc",
+    }
+    r = health.classify_service(svc)
+    assert r["state"] == "healthy"
+    assert r["rollout"]["state"] == "paused"
+    assert "early termination" in r["rollout"]["message"]
+
+
+def test_in_flight_rollout_has_no_paused_advisory():
+    svc = _service("web", replicas=1, tasks=[])
+    svc["update_status"] = {"State": "paused", "StartedAt": _ts(_now())}
+    r = health.classify_service(svc)
+    assert r["state"] == "updating"
+    assert r["rollout"] is None
+
+
+def test_stale_docker_update_ignored_even_when_down():
+    svc = _service("web", replicas=1, tasks=[])
+    svc["update_status"] = {
+        "State": "updating",
+        "StartedAt": _ts(_now() - timedelta(seconds=health.UPDATE_STALE_S + 60)),
+    }
+    assert health.classify_service(svc)["state"] == "down"
+
+
+def test_in_flight_rollout_still_updating_while_old_task_runs():
+    # New task starting while the old replica still runs: converged by count,
+    # but there is something in flight -> "updating".
+    old = _running_task()
+    old["Slot"] = 1
+    new = {"DesiredState": "running", "Slot": 1, "NodeID": "n1",
+           "Status": {"State": "preparing", "Timestamp": _ts(_now())}}
+    svc = _service("web", replicas=1, tasks=[old, new])
+    svc["update_status"] = {"State": "updating", "StartedAt": _ts(_now())}
+    assert health.classify_service(svc)["state"] == "updating"
+
+
+def test_failure_before_current_running_task_is_not_reported():
+    # Slot rejected twice, then started fine 29h ago -> no stale warning.
+    rejected = _failed_task(secs_ago=30 * 3600, err="No such image", exit_code=0)
+    rejected["Slot"] = 1
+    rejected["Status"]["State"] = "rejected"
+    running = _running_task()
+    running["Slot"] = 1
+    running["Status"]["Timestamp"] = _ts(_now() - timedelta(hours=29))
+    svc = _service("immich", replicas=1, tasks=[running, rejected])
+    result = health.classify_service(svc)
+    assert result["state"] == "healthy"
+    assert result["last_error"] is None
+
+
+def test_failure_on_a_slot_with_nothing_running_is_reported():
+    failed = _failed_task(secs_ago=60, err="boom")
+    failed["Slot"] = 2
+    running = _running_task()
+    running["Slot"] = 1
+    running["Status"]["Timestamp"] = _ts(_now() - timedelta(hours=5))
+    svc = _service("web", replicas=2, tasks=[running, failed])
+    result = health.classify_service(svc)
+    assert result["state"] == "degraded"
+    assert result["last_error"] == "boom"
+
+
+def test_zero_exit_code_is_not_reported():
+    failed = _failed_task(secs_ago=60, err="failed to lookup digest", exit_code=0)
+    svc = _service("lidarr", replicas=1, tasks=[failed])
+    result = health.classify_service(svc)
+    assert result["last_error"] == "failed to lookup digest"
+    assert result["last_exit_code"] is None
+
+
 def test_redeploying_flag_beats_down():
     svc = _service("web", replicas=1, tasks=[])
     assert health.classify_service(svc, redeploying=True)["state"] == "updating"

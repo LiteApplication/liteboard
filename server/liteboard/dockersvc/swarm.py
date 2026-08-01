@@ -146,6 +146,30 @@ def ensure_daemon_pubkey(pub_b64: str) -> str:
         return "updated"
 
 
+def clear_rollout_status(service_id: str) -> None:
+    """Nudge Swarm to finish a stalled (paused) rollout.
+
+    A paused ``UpdateStatus`` never resolves on its own — Swarm keeps reporting
+    it until *some* update runs. Re-submitting the **unchanged** spec bumps the
+    service version, which makes the orchestrator re-evaluate the rollout: no
+    task differs from the template, so nothing restarts and it marks the update
+    complete. Unlike :func:`force_update_service` this does not bounce the
+    running tasks.
+    """
+    client = get_client()
+    with _lock:
+        svc = client.services.get(service_id)
+        spec = copy.deepcopy(svc.attrs.get("Spec", {}))
+        # fetch_current_spec merges this over the live spec — passing the
+        # existing TaskTemplate back therefore changes nothing at all.
+        client.api.update_service(
+            svc.id,
+            svc.version,
+            task_template=spec.get("TaskTemplate", {}),
+            fetch_current_spec=True,
+        )
+
+
 def force_update_service(service_id: str) -> None:
     client = get_client()
     with _lock:

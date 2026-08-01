@@ -29,6 +29,14 @@ export function uptime(seconds) {
   return `${m}m`
 }
 
+export function ago(iso) {
+  if (!iso) return ''
+  // Docker timestamps carry nanoseconds, which Date can't parse — trim to ms.
+  const t = Date.parse(iso.replace(/(\.\d{3})\d+/, '$1'))
+  if (isNaN(t)) return ''
+  return uptime(Math.max(0, (Date.now() - t) / 1000))
+}
+
 export const STATE_META = {
   'crash-loop': { label: 'Crash-loop', color: 'critical', glow: true },
   down: { label: 'Down', color: 'critical', glow: false },
