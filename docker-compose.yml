@@ -58,6 +58,7 @@ services:
       LITEBOARD_DOCKER_SOCK: /var/run/docker.sock
       LITEBOARD_NODE_NAME: "{{.Node.Hostname}}"
       LITEBOARD_DOCKER_NETNS_DIR: /host/docker-netns
+      LITEBOARD_HOST_NETNS: /host/netns/root
       # Public name resolved to verify container DNS egress; empty skips it.
       LITEBOARD_DNS_PROBE_HOST: ${LITEBOARD_DNS_PROBE_HOST:-one.one.one.one}
     # The fabric probes read VXLAN forwarding tables and interface MTUs from
@@ -79,6 +80,10 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      # The host's root network namespace, as its own bind mount. Reading it
+      # out of /host/proc instead would hit the kernel's ptrace check on
+      # /proc/<pid>/ns/* and be denied without CAP_SYS_PTRACE.
+      - /proc/1/ns/net:/host/netns/root:ro
       # Docker's named network namespaces. `rslave` matters: namespaces are
       # created and destroyed as networks come and go, and without propagation
       # the daemon would only ever see the set that existed when it started.

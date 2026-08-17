@@ -42,8 +42,14 @@ from dockerapi import get as _docker_get
 # Where Docker keeps its named network namespaces on the host, bind-mounted
 # into the daemon container (see docker-compose.yml).
 NETNS_DIR = os.environ.get("LITEBOARD_DOCKER_NETNS_DIR", "/host/docker-netns")
-# The host's root netns, reachable through the already-mounted host procfs.
 PROCFS = os.environ.get("LITEBOARD_PROCFS", "/proc")
+# The host's root network namespace, bind-mounted straight in from
+# /proc/1/ns/net. It has to arrive as its own mount rather than being read out
+# of the mounted host procfs: opening /proc/<pid>/ns/* goes through the kernel's
+# ptrace_may_access check, which denies even uid 0 in the container without
+# CAP_SYS_PTRACE. Bind-mounting the nsfs inode sidesteps that check entirely,
+# so the daemon needs no ptrace capability just to read the host's interfaces.
+HOST_NETNS = os.environ.get("LITEBOARD_HOST_NETNS", "/host/netns/root")
 # Public name used to check that containers on this node have working DNS
 # egress. Set to an empty string to skip the probe entirely.
 DNS_PROBE_HOST = os.environ.get("LITEBOARD_DNS_PROBE_HOST", "one.one.one.one")
@@ -119,9 +125,9 @@ def _repair_stale_vxlan(params: dict) -> dict:
     name = str(params.get("interface") or "")
     if not name or "/" in name:
         return {"error": f"invalid interface {name!r}"}
-    ns_path = os.path.join(PROCFS, "1", "ns", "net")
-    if not os.path.exists(ns_path):
-        return {"error": "host namespace unavailable"}
+    ns_path = _host_netns_path()
+    if not ns_path:
+        return {"error": "host network namespace unreadable"}
 
     def _apply() -> dict:
         link = next((l for l in netlink.list_links() if l["name"] == name), None)
@@ -279,11 +285,33 @@ def _netns_probe() -> dict:
     }
 
 
+def _host_netns_path() -> str | None:
+    """First host-netns path we can actually open.
+
+    Probed by *opening* rather than with ``os.path.exists``: a namespace file we
+    lack permission for reports as non-existent (``stat`` returns EACCES), which
+    would otherwise be indistinguishable from one that was never mounted.
+    """
+    for path in (HOST_NETNS, os.path.join(PROCFS, "1", "ns", "net")):
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except OSError:
+            continue
+        os.close(fd)
+        return path
+    return None
+
+
 def _probe_root_netns() -> dict:
     """Host-namespace links + addresses (underlay MTU, orphaned vxlan devices)."""
-    ns_path = os.path.join(PROCFS, "1", "ns", "net")
-    if not os.path.exists(ns_path):
-        return {"error": f"{ns_path} unavailable (host procfs not mounted)"}
+    ns_path = _host_netns_path()
+    if not ns_path:
+        return {
+            "error": (
+                f"host network namespace unreadable — bind-mount /proc/1/ns/net "
+                f"to {HOST_NETNS} (reading it via {PROCFS} needs CAP_SYS_PTRACE)"
+            )
+        }
     return netlink.in_netns(ns_path, _root_probe)
 
 
