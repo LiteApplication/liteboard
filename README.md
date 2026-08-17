@@ -6,7 +6,7 @@
 
 **A beautiful, at-a-glance health & operations dashboard for Docker Swarm.**
 
-Crash-loop detection · under-replica alerts · one-click image updates · live per-node metrics · cross-node network consistency — behind Authentik SSO.
+Crash-loop detection · under-replica alerts · one-click image updates · live per-node metrics · silent overlay-fault detection with one-click repair — behind Authentik SSO.
 
 </div>
 
@@ -21,7 +21,33 @@ LiteBoard connects to your Swarm **manager socket** and answers the four questio
 | **Overview** | Which apps are **crash-looping** or **under-replicated** (`0/1`), sorted worst-first, with the last error and restart count. |
 | **Updates** | Which service images are **behind their tag** (e.g. `:latest` moved on the registry). Update one service or **all of them in one click**. |
 | **Nodes** | Live **CPU, memory, load, disk I/O and network** per node, from a tiny daemon on each host. |
-| **Networks** | **Overlay inconsistencies** — IP collisions, subnet mismatches, or a task showing different IPs on different nodes (beyond redundancy). |
+| **Networks** | **Silent overlay faults** — blackholed VXLAN routes, oversized MTUs, desynced service tables — plus IP collisions and divergent task IPs. Repairable faults get a **fix button**. |
+
+## Why the Networks tab exists
+
+Swarm overlays fail in ways that log nothing. A gossip race leaves one node's VXLAN
+forwarding table without a destination for a container that is running perfectly, and
+that node — and only that node — drops every packet to it: one proxy replica 504s a
+route its peers serve fine. An overlay whose MTU exceeds the tunnel underneath it
+passes every handshake and ping while quietly shredding real payloads. A node's copy
+of the service table loses a VIP and its DNS answers start coming from the *host's*
+upstream resolver instead.
+
+None of these show up in `docker service ps`, and each has historically cost an
+afternoon of `tcpdump` and `nsenter`. LiteBoard checks all of them every poll:
+
+| Fault | What it does to you | Fix |
+| --- | --- | --- |
+| **Blackholed route** | one node silently drops traffic to a healthy container | **button** — rewrites the entry, nothing restarts |
+| **Overlay MTU too large** | large packets vanish; every reachability test says "fine" | recreate the network at the suggested MTU |
+| **Service DNS desync** | name lookups fail on one node, may resolve to a public IP | restart that node's Docker daemon |
+| **Swarm engine degraded** | engine runs, swarm module is dead (e.g. lost a boot race) | restart that node's Docker daemon |
+| **Orphaned vxlan interface** | node can't rejoin a network ("file exists") | **button** — deletes the leftover device |
+| **DNS egress blocked** | containers on the node can't resolve public names | fix the host's resolvers |
+
+Repair buttons are offered **only** where the fix is targeted and non-disruptive. Anything
+that would restart a daemon or rebuild a network is reported with guidance instead, never
+wired to a button.
 
 Metrics and network data come from a small **Python daemon** that runs on every node. The server reaches out to each daemon, and **every request is cryptographically signed** so nothing but your server can talk to them. Daemons can **self-update** — but only from bundles signed by your server's key.
 
@@ -45,7 +71,7 @@ Metrics and network data come from a small **Python daemon** that runs on every 
 ```
 
 - **Server** — Python + FastAPI + docker-py, serving a Vue 3 SPA. Runs on a manager node.
-- **Daemon** — dependency-light Python (`psutil` + `cryptography`), one per node via a `global` service.
+- **Daemon** — dependency-light Python (`psutil` + `cryptography`), one per node via a `global` service. Speaks netlink directly for its namespace probes, so the image needs no `iproute2`.
 - **Metrics are live-only** — held in memory, no database.
 
 ### Security model
@@ -104,7 +130,9 @@ Open `https://<liteboard-host>` — you'll land on the **setup wizard**. Enter t
 2. **Overview** shows your services; deliberately break one (`docker service scale <svc>=0`) and watch it flag.
 3. **Nodes** shows a live gauge card per node with a green *daemon up* badge (daemons flip from *unprovisioned* to up once keyed).
 4. **Nodes → Update daemons** pushes a signed self-update; the reported version bumps.
-5. **Networks** reports *consistent* (or lists any real inconsistencies).
+5. **Networks** reports *fabric intact* (or lists real faults). If it shows a
+   "Limited visibility" panel, the daemon is missing `SYS_ADMIN`/`NET_ADMIN` or the
+   `/run/docker/netns` mount — see below.
 
 ---
 
@@ -146,6 +174,8 @@ saved config; see `server/liteboard/config.py`).
 | `OIDC_REQUIRED_GROUP` | Optional group gate. |
 | `SIGNING_KEY_FILE` | Path to the Ed25519 private key. Auto-resolves to `<DATA_DIR>/signing_key`. |
 | `DAEMON_PORT` / `DAEMON_SCHEME` | Where/how to reach node daemons. |
+| `DNS_PROBE_HOST` | Public name the daemon resolves to check container DNS egress. Empty disables the probe. |
+| `DOCKER_NETNS_DIR` | Where Docker's network namespaces are mounted in the daemon (default `/host/docker-netns`). |
 | `POLL_INTERVAL` | Seconds between node polls / SSE ticks. |
 | `REGISTRY_CONFIG_FILE` | Docker `config.json` for private-repo update checks (optional). |
 | `AUTH_DISABLED` | Dev only — skip OIDC (treats the server as configured). |
@@ -172,6 +202,13 @@ offline with `make keygen` if you want to pin it yourself.
   all daemons). Old daemons are rejected until they receive the new key.
 - **Daemon exposure:** prefer firewalling `DAEMON_PORT` to intra-cluster traffic.
   Signatures already prevent unauthorized use, but least-exposure is still best.
+- **Daemon capabilities:** the fabric probes need `SYS_ADMIN` (to enter a network
+  namespace) and `NET_ADMIN` (to read and repair forwarding entries), granted in
+  `docker-compose.yml`. Removing both is supported and non-fatal — the daemon keeps
+  running and the Docker-API checks keep working; only the namespace probes go dark,
+  which the UI reports rather than passing off as health. Repairs are reachable only
+  over the same signed, replay-protected channel as everything else, accept a fixed
+  set of actions, and re-verify their preconditions before touching anything.
 - **Private registries:** provide credentials via a `liteboard_registry_creds`
   secret (see the commented block in `docker-compose.yml`) to detect updates for
   private repos.

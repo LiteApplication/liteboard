@@ -24,6 +24,7 @@ class NodeCollector:
         self._metrics: dict[str, dict] = {}
         self._networks: dict[str, dict] = {}
         self._images: dict[str, dict] = {}
+        self._fabric: dict[str, dict] = {}
         self._nodes: list[dict] = []
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -97,11 +98,18 @@ class NodeCollector:
             network_results = await asyncio.gather(
                 *(self._fetch(client, n, "/networks") for n in nodes)
             )
+            # The fabric probes fork into network namespaces and run a DNS
+            # lookup, so they cost noticeably more than a metrics tick — but
+            # the failures they catch are silent, and a stale reading would
+            # have an operator chasing a route that was already repaired.
+            fabric_results = await asyncio.gather(
+                *(self._fetch(client, n, "/fabric") for n in nodes)
+            )
 
         async with self._lock:
             self._nodes = nodes
-            for node, metrics, version, networks in zip(
-                nodes, metric_results, version_results, network_results
+            for node, metrics, version, networks, fabric in zip(
+                nodes, metric_results, version_results, network_results, fabric_results
             ):
                 nid = node["id"]
                 reachable = bool(metrics) and "_error" not in metrics
@@ -114,6 +122,9 @@ class NodeCollector:
                 }
                 if networks and "_error" not in networks:
                     self._networks[nid] = networks
+                # Errors are kept here (unlike networks): a daemon that cannot
+                # run the privileged probes is itself worth reporting.
+                self._fabric[nid] = fabric or {"_error": "no data"}
 
     async def poll_images_once(self) -> None:
         nodes = await self.nodes()
@@ -143,6 +154,39 @@ class NodeCollector:
                 nid: self._networks.get(nid, {})
                 for nid in (n["id"] for n in self._nodes)
             }
+
+    async def fabric_by_node(self) -> dict[str, dict]:
+        async with self._lock:
+            return {
+                nid: self._fabric.get(nid, {})
+                for nid in (n["id"] for n in self._nodes)
+            }
+
+    async def repair_fabric(self, node_id: str, action: str, params: dict) -> dict:
+        """Ask one node's daemon to apply a targeted overlay repair."""
+        import json
+
+        node = next((n for n in await self.nodes() if n["id"] == node_id), None)
+        if not node:
+            return {"error": "node not found"}
+        body = json.dumps({"action": action, "params": params}).encode()
+        headers = self._signer.sign_headers("POST", "/fabric/repair", body)
+        headers["Content-Type"] = "application/json"
+        url = self._daemon_url(node, "/fabric/repair")
+        if not url:
+            return {"error": "unreachable"}
+        async with httpx.AsyncClient(timeout=self._settings.daemon_timeout) as client:
+            try:
+                resp = await client.post(url, content=body, headers=headers)
+            except httpx.HTTPError as exc:
+                return {"error": str(exc)}
+        try:
+            result = resp.json()
+        except ValueError:
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+        if resp.status_code != 200:
+            return {"error": result.get("error") or f"HTTP {resp.status_code}"}
+        return result
 
     async def nodes(self) -> list[dict]:
         async with self._lock:

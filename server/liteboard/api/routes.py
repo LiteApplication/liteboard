@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from ..auth.oidc import require_user
 from ..daemon_dist import bundle as daemon_bundle
 from ..dockersvc import health, redeploys, swarm, updates
+from ..nodes.fabric import analyze_fabric
 from ..nodes.networks import analyze_networks
 from ..state import get_state
 
@@ -219,6 +220,40 @@ async def networks():
     state = get_state()
     by_node = await state.collector.networks_by_node()
     return analyze_networks(by_node)
+
+
+@router.get("/fabric")
+async def fabric():
+    """Overlay plumbing health: FDB desyncs, MTU, service-table and DNS faults."""
+    state = get_state()
+    by_node = await state.collector.fabric_by_node()
+    nodes = await state.collector.nodes()
+    endpoints = await asyncio.to_thread(swarm.task_endpoints)
+    return analyze_fabric(by_node, nodes, endpoints)
+
+
+class FabricRepairRequest(BaseModel):
+    node_id: str
+    action: str
+    params: dict
+
+
+@router.post("/fabric/repair")
+async def fabric_repair(req: FabricRepairRequest):
+    """Apply one finding's repair on the node that reported it.
+
+    Only the actions a daemon can fix in place are routed here; findings that
+    need a daemon restart or a network rebuild carry no repair and are surfaced
+    with guidance instead.
+    """
+    state = get_state()
+    result = await state.collector.repair_fabric(req.node_id, req.action, req.params)
+    if "error" in result:
+        raise HTTPException(502, result["error"])
+    # Re-probe immediately so the UI reflects the repair instead of the cached
+    # pre-repair reading.
+    await state.collector.poll_once()
+    return {"ok": True, **result}
 
 
 @router.get("/daemons/version")

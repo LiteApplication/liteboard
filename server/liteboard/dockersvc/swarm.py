@@ -297,6 +297,39 @@ def join_info() -> dict:
     }
 
 
+def task_endpoints() -> list[dict]:
+    """Where every running task's overlay IPs actually live, cluster-wide.
+
+    This is the ground truth the fabric analysis compares each node's VXLAN
+    forwarding table against. It has to come from the *task* records rather than
+    ``network inspect``, because a network's ``Containers`` map only ever lists
+    endpoints attached on the node answering the query — never the cluster-wide
+    view its name suggests.
+    """
+    client = get_client()
+    out = []
+    for task in client.api.tasks(filters={"desired-state": "running"}):
+        if (task.get("Status") or {}).get("State") != "running":
+            continue
+        for attachment in task.get("NetworksAttachments") or []:
+            network = attachment.get("Network") or {}
+            net_id = network.get("ID")
+            if not net_id:
+                continue
+            for addr in attachment.get("Addresses") or []:
+                out.append(
+                    {
+                        "node_id": task.get("NodeID"),
+                        "network_id": net_id,
+                        "network": (network.get("Spec") or {}).get("Name"),
+                        "ip": addr.split("/")[0],
+                        "task_id": task.get("ID"),
+                        "service_id": task.get("ServiceID"),
+                    }
+                )
+    return out
+
+
 def swarm_info() -> dict:
     client = get_client()
     info = client.info()

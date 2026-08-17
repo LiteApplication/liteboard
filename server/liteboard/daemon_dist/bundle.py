@@ -20,6 +20,8 @@ DAEMON_FILES = [
     "selfupdate.py",
     "dockerapi.py",
     "images.py",
+    "netlink.py",
+    "fabric.py",
 ]
 
 _SRC_DIR = os.path.join(os.path.dirname(__file__), "src")

@@ -30,13 +30,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+import fabric
 import images
 import protocol
 import selfupdate
 from metrics import MetricsCollector
 from netinspect import inspect_networks
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 INSTALL_DIR = os.path.dirname(os.path.abspath(__file__))
 DOCKER_SOCK = os.environ.get("LITEBOARD_DOCKER_SOCK", "/var/run/docker.sock")
@@ -151,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, DAEMON.metrics.snapshot().as_dict())
         elif route == "/networks":
             self._send_json(200, inspect_networks(DOCKER_SOCK))
+        elif route == "/fabric":
+            self._send_json(200, fabric.collect(DOCKER_SOCK))
         elif route == "/images":
             self._send_json(200, images.disk_usage(DOCKER_SOCK))
         elif route == "/images/prune/status":
@@ -171,8 +174,24 @@ class Handler(BaseHTTPRequestHandler):
         elif route == "/images/prune":
             job_id = images.start_prune(DOCKER_SOCK)
             self._send_json(202, {"job_id": job_id})
+        elif route == "/fabric/repair":
+            self._handle_repair(body)
         else:
             self._send_json(404, {"error": "not found"})
+
+    def _handle_repair(self, body: bytes) -> None:
+        """Apply one targeted overlay repair (already signature-authenticated)."""
+        try:
+            payload = json.loads(body or b"{}")
+        except json.JSONDecodeError:
+            self._send_json(400, {"error": "invalid json"})
+            return
+        action = payload.get("action")
+        if action not in fabric.REPAIR_ACTIONS:
+            self._send_json(400, {"error": f"unsupported action {action!r}"})
+            return
+        result = fabric.repair(action, payload.get("params") or {})
+        self._send_json(500 if "error" in result else 200, result)
 
     def _handle_update(self, body: bytes) -> None:
         try:

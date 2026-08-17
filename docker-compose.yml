@@ -57,6 +57,19 @@ services:
       LITEBOARD_PROCFS: /host/proc
       LITEBOARD_DOCKER_SOCK: /var/run/docker.sock
       LITEBOARD_NODE_NAME: "{{.Node.Hostname}}"
+      LITEBOARD_DOCKER_NETNS_DIR: /host/docker-netns
+      # Public name resolved to verify container DNS egress; empty skips it.
+      LITEBOARD_DNS_PROBE_HOST: ${LITEBOARD_DNS_PROBE_HOST:-one.one.one.one}
+    # The fabric probes read VXLAN forwarding tables and interface MTUs from
+    # inside each overlay's network namespace, and from the host's own — which
+    # is where the silent overlay failures are visible and nowhere else.
+    # Entering a namespace needs SYS_ADMIN; reading and repairing forwarding
+    # entries needs NET_ADMIN. Remove these two caps and the daemon still runs
+    # fine: the namespace probes report "unavailable" in the UI and every
+    # Docker-API-based check keeps working.
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
     # Host-mode publish so the server reaches each daemon at <node-ip>:PORT.
     ports:
       - target: ${LITEBOARD_DAEMON_PORT:-9187}
@@ -66,6 +79,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      # Docker's named network namespaces. `rslave` matters: namespaces are
+      # created and destroyed as networks come and go, and without propagation
+      # the daemon would only ever see the set that existed when it started.
+      - type: bind
+        source: /run/docker/netns
+        target: /host/docker-netns
+        read_only: true
+        bind:
+          propagation: rslave
     deploy:
       mode: global
       # The server locates the daemon service by this label to inject the key.
