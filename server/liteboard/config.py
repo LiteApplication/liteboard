@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     daemon_scheme: str = "http"
     daemon_timeout: float = 5.0
     poll_interval: float = 5.0
+    # The fabric probes fork into every overlay namespace and run a DNS lookup,
+    # so they cost far more than a metrics tick and are polled on their own,
+    # slower cadence. The faults they find persist until repaired — none of them
+    # resolves on its own — so there is nothing to gain from checking at 5s.
+    fabric_interval: float = 60.0
     # Signing key: empty => auto-resolve (legacy Docker secret, else data dir).
     signing_key_file: str = ""
     signing_key: str = ""  # base64/PEM inline (dev only)

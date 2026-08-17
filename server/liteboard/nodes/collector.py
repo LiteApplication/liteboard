@@ -25,6 +25,7 @@ class NodeCollector:
         self._networks: dict[str, dict] = {}
         self._images: dict[str, dict] = {}
         self._fabric: dict[str, dict] = {}
+        self._fabric_polled_at = 0.0
         self._nodes: list[dict] = []
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -85,9 +86,12 @@ class NodeCollector:
             return {"_error": "unreachable", "_detail": str(exc)}
 
     # -- polling ----------------------------------------------------------- #
-    async def poll_once(self) -> None:
+    async def poll_once(self, force_fabric: bool = False) -> None:
         nodes = await asyncio.to_thread(swarm.list_nodes)
         s = self._settings
+        want_fabric = force_fabric or (
+            time.time() - self._fabric_polled_at >= s.fabric_interval
+        )
         async with httpx.AsyncClient(timeout=s.daemon_timeout) as client:
             metric_results = await asyncio.gather(
                 *(self._fetch(client, n, "/metrics") for n in nodes)
@@ -98,16 +102,17 @@ class NodeCollector:
             network_results = await asyncio.gather(
                 *(self._fetch(client, n, "/networks") for n in nodes)
             )
-            # The fabric probes fork into network namespaces and run a DNS
-            # lookup, so they cost noticeably more than a metrics tick — but
-            # the failures they catch are silent, and a stale reading would
-            # have an operator chasing a route that was already repaired.
-            fabric_results = await asyncio.gather(
-                *(self._fetch(client, n, "/fabric") for n in nodes)
+            # Deliberately off the metrics cadence — see fabric_interval.
+            fabric_results = (
+                await asyncio.gather(*(self._fetch(client, n, "/fabric") for n in nodes))
+                if want_fabric
+                else [None] * len(nodes)
             )
 
         async with self._lock:
             self._nodes = nodes
+            if want_fabric:
+                self._fabric_polled_at = time.time()
             for node, metrics, version, networks, fabric in zip(
                 nodes, metric_results, version_results, network_results, fabric_results
             ):
@@ -124,7 +129,8 @@ class NodeCollector:
                     self._networks[nid] = networks
                 # Errors are kept here (unlike networks): a daemon that cannot
                 # run the privileged probes is itself worth reporting.
-                self._fabric[nid] = fabric or {"_error": "no data"}
+                if want_fabric:
+                    self._fabric[nid] = fabric or {"_error": "no data"}
 
     async def poll_images_once(self) -> None:
         nodes = await self.nodes()

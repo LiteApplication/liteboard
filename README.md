@@ -177,6 +177,7 @@ saved config; see `server/liteboard/config.py`).
 | `DNS_PROBE_HOST` | Public name the daemon resolves to check container DNS egress. Empty disables the probe. |
 | `DOCKER_NETNS_DIR` | Where Docker's network namespaces are mounted in the daemon (default `/host/docker-netns`). |
 | `POLL_INTERVAL` | Seconds between node polls / SSE ticks. |
+| `FABRIC_INTERVAL` | Seconds between overlay-fabric probes (default 60 — they cost more than a metrics tick). |
 | `REGISTRY_CONFIG_FILE` | Docker `config.json` for private-repo update checks (optional). |
 | `AUTH_DISABLED` | Dev only — skip OIDC (treats the server as configured). |
 

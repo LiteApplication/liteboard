@@ -250,9 +250,9 @@ async def fabric_repair(req: FabricRepairRequest):
     result = await state.collector.repair_fabric(req.node_id, req.action, req.params)
     if "error" in result:
         raise HTTPException(502, result["error"])
-    # Re-probe immediately so the UI reflects the repair instead of the cached
-    # pre-repair reading.
-    await state.collector.poll_once()
+    # Re-probe immediately, overriding the slow fabric cadence, so the UI
+    # reflects the repair instead of the cached pre-repair reading.
+    await state.collector.poll_once(force_fabric=True)
     return {"ok": True, **result}
 
 

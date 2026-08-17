@@ -304,3 +304,60 @@ def test_findings_are_ranked_worst_first():
     )
     severities = [f["severity"] for f in analyze_fabric({"nA": report}, NODES, ENDPOINTS)["findings"]]
     assert severities == ["critical", "warning"]
+
+
+# --- collector cadence ------------------------------------------------------ #
+import asyncio
+from unittest.mock import patch
+
+from liteboard.config import Settings
+from liteboard.nodes.collector import NodeCollector
+
+
+def _collector(fabric_interval=60.0):
+    return NodeCollector(
+        signer=None, settings=Settings(poll_interval=5.0, fabric_interval=fabric_interval)
+    )
+
+
+def _run_polls(collector, count, fetches):
+    """Drive poll_once, recording which daemon paths were requested each time."""
+
+    # Patched on the class, so it receives `self` like the real method.
+    async def fake_fetch(_self, _client, _node, path):
+        fetches.append(path)
+        return {"probe": path}
+
+    async def go():
+        for _ in range(count):
+            await collector.poll_once()
+
+    with patch(
+        "liteboard.dockersvc.swarm.list_nodes",
+        return_value=[{"id": "nA", "hostname": "alpha", "addr": "100.64.0.1"}],
+    ), patch.object(NodeCollector, "_fetch", fake_fetch):
+        asyncio.run(go())
+
+
+def test_fabric_is_not_probed_on_every_metrics_tick():
+    """Forking into every namespace at the 5s metrics cadence would be wasteful."""
+    collector = _collector()
+    fetches: list[str] = []
+    _run_polls(collector, 3, fetches)
+
+    # Probed once on the first poll, then suppressed until the interval elapses.
+    assert fetches.count("/fabric") == 1
+    assert fetches.count("/metrics") == 3
+
+
+def test_suppressed_fabric_poll_keeps_the_previous_reading():
+    collector = _collector()
+    _run_polls(collector, 2, [])
+    assert asyncio.run(collector.fabric_by_node()) == {"nA": {"probe": "/fabric"}}
+
+
+def test_elapsed_interval_reprobes():
+    collector = _collector(fabric_interval=0.0)
+    fetches: list[str] = []
+    _run_polls(collector, 3, fetches)
+    assert fetches.count("/fabric") == 3
