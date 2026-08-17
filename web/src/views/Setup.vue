@@ -58,11 +58,11 @@ const inputCls =
 </script>
 
 <template>
-  <div class="min-h-full flex items-center justify-center relative overflow-hidden py-10">
+  <div class="min-h-full flex items-center justify-center relative overflow-hidden px-4 py-10">
     <div class="absolute w-[600px] h-[600px] rounded-full bg-accent/10 blur-[120px] -top-40 -left-20" />
     <div class="absolute w-[500px] h-[500px] rounded-full bg-info/10 blur-[120px] -bottom-40 -right-20" />
 
-    <div class="card p-8 w-[460px] max-w-[92vw] relative animate-fadeUp">
+    <div class="card p-6 sm:p-8 w-full max-w-[460px] relative animate-fadeUp">
       <div class="text-center mb-6">
         <img src="/favicon.svg" alt="LiteBoard" class="w-14 h-14 mx-auto mb-4 drop-shadow-glow" />
         <h1 class="text-xl font-semibold tracking-tight text-slate-100">Set up LiteBoard</h1>

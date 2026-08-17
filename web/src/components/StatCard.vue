@@ -12,7 +12,7 @@ const ring = {
 </script>
 
 <template>
-  <div class="card p-5 animate-fadeUp relative overflow-hidden">
+  <div class="card p-4 sm:p-5 animate-fadeUp relative overflow-hidden">
     <div class="absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-[0.07] blur-2xl"
          :class="ring[accent]" style="background: currentColor" />
     <div class="label">{{ label }}</div>

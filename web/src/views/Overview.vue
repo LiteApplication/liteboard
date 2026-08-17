@@ -36,15 +36,18 @@ const loading = computed(() => !store.overview)
     </template>
   </PageHeader>
 
-  <div class="p-8 space-y-8">
+  <div class="page space-y-6 sm:space-y-8">
     <!-- Counter row -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
       <StatCard label="Services" :value="counts.total ?? '—'" accent="accent" />
       <StatCard label="Healthy" :value="counts.healthy ?? 0" accent="healthy" />
       <StatCard label="Degraded" :value="(counts.degraded ?? 0) + (counts.down ?? 0)" accent="degraded"
                 :hint="counts.down ? `${counts.down} fully down` : ''" />
       <StatCard label="Crash-loop" :value="counts['crash-loop'] ?? 0" accent="critical" />
-      <StatCard label="Updating" :value="counts.updating ?? 0" accent="info" />
+      <!-- Odd tile out: spans the row on a 2-up phone grid instead of sitting
+           orphaned next to a gap. -->
+      <StatCard label="Updating" :value="counts.updating ?? 0" accent="info"
+                class="col-span-2 sm:col-span-1" />
     </div>
 
     <div v-if="loading" class="text-center py-16 text-slate-500">
@@ -65,7 +68,7 @@ const loading = computed(() => !store.overview)
     </section>
 
     <!-- All good banner -->
-    <div v-else-if="!loading" class="card p-8 text-center border-healthy/20">
+    <div v-else-if="!loading" class="card p-6 sm:p-8 text-center border-healthy/20">
       <div class="w-14 h-14 rounded-2xl bg-healthy/15 text-healthy flex items-center justify-center mx-auto mb-3">
         <Icon name="check" :size="28" />
       </div>
@@ -78,7 +81,7 @@ const loading = computed(() => !store.overview)
     <!-- Healthy list (collapsed-ish) -->
     <section v-if="healthy.length">
       <h2 class="text-sm font-semibold text-slate-400 mb-3">Healthy services</h2>
-      <div class="grid md:grid-cols-2 gap-2.5">
+      <div class="grid xl:grid-cols-2 gap-2.5">
         <ServiceRow v-for="s in healthy" :key="s.id" :service="s" />
       </div>
     </section>

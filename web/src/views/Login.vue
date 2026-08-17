@@ -3,12 +3,12 @@ import { login } from '../lib/api'
 </script>
 
 <template>
-  <div class="h-full flex items-center justify-center relative overflow-hidden">
+  <div class="min-h-full flex items-center justify-center relative overflow-hidden px-4 py-10">
     <!-- ambient glow -->
     <div class="absolute w-[600px] h-[600px] rounded-full bg-accent/10 blur-[120px] -top-40 -left-20" />
     <div class="absolute w-[500px] h-[500px] rounded-full bg-info/10 blur-[120px] -bottom-40 -right-20" />
 
-    <div class="card p-10 w-[380px] text-center relative animate-fadeUp">
+    <div class="card p-8 sm:p-10 w-full max-w-[380px] text-center relative animate-fadeUp">
       <img src="/favicon.svg" alt="LiteBoard" class="w-16 h-16 mx-auto mb-5 drop-shadow-glow" />
       <h1 class="text-2xl font-semibold tracking-tight text-slate-100">LiteBoard</h1>
       <p class="text-sm text-slate-500 mt-2 mb-8">

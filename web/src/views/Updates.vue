@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import Icon from '../components/Icon.vue'
 import RegistryLoginModal from '../components/RegistryLoginModal.vue'
+import UpdateAction from '../components/UpdateAction.vue'
 import { api } from '../lib/api'
 import { shortDigest } from '../lib/format'
 import { store, waitForServer } from '../lib/store'
@@ -108,7 +109,7 @@ onMounted(load)
     </template>
   </PageHeader>
 
-  <div class="p-8 space-y-4">
+  <div class="page space-y-4">
     <div v-if="error" class="card border-critical/30 p-3 text-sm text-critical">{{ error }}</div>
 
     <div v-if="authSuggestions.length" class="card border-critical/30 p-4 flex flex-wrap items-center gap-3">
@@ -117,7 +118,7 @@ onMounted(load)
         {{ authSuggestions.length === 1 ? 'A registry lookup' : `${authSuggestions.length} registry lookups` }}
         failed as unauthorized. Log in to continue checking for updates.
       </div>
-      <div class="flex flex-wrap gap-2 ml-auto">
+      <div class="flex flex-wrap gap-2 sm:ml-auto">
         <button
           v-for="reg in authSuggestions"
           :key="reg"
@@ -135,7 +136,37 @@ onMounted(load)
 
     <div v-else-if="!items.length" class="text-center py-16 text-slate-500">No services found.</div>
 
-    <div v-else class="card overflow-hidden">
+    <!-- Phones: one card per service. A 6-column table can't survive 360px, and
+         horizontal scrolling hides the very column (Status) people came for. -->
+    <div v-else class="md:hidden space-y-2.5">
+      <div v-for="item in items" :key="item.id" class="card p-4 space-y-3">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="font-medium text-slate-100 break-words">{{ item.name }}</div>
+            <div class="text-xs text-slate-500 font-mono break-all mt-0.5">{{ item.repository }}</div>
+          </div>
+          <span class="pill shrink-0" :class="statusMeta[item.status]?.cls">
+            {{ statusMeta[item.status]?.label || item.status }}
+          </span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+          <span class="pill bg-surface-2 text-slate-300 font-mono">{{ item.tag }}</span>
+          <span class="font-mono text-slate-400">{{ shortDigest(item.running_digest) }}</span>
+          <template v-if="item.update_available">
+            <Icon name="download" :size="12" class="text-degraded -mx-1" />
+            <span class="font-mono text-degraded">{{ shortDigest(item.remote_digest) }}</span>
+          </template>
+        </div>
+
+        <UpdateAction
+          :item="item" :busy="busy" :applying-all="applyingAll" block
+          @apply="applyOne(item)" @login="openLogin(item.registry)"
+        />
+      </div>
+    </div>
+
+    <div v-if="items.length && !loading" class="card overflow-hidden hidden md:block">
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-slate-500 border-b border-border/60">
@@ -170,20 +201,10 @@ onMounted(load)
               </span>
             </td>
             <td class="px-5 py-3 text-right">
-              <button v-if="item.update_available" class="btn-accent !py-1.5 !px-3"
-                      :disabled="busy != null || applyingAll" @click="applyOne(item)">
-                <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
-                Update
-              </button>
-              <button v-else-if="item.status === 'unpinned' && item.remote_digest" class="btn-ghost !py-1.5 !px-3"
-                      :disabled="busy != null || applyingAll" @click="applyOne(item)">
-                <Icon :name="busy === item.id ? 'refresh' : 'download'" :size="14" :class="busy === item.id && 'animate-spin'" />
-                Pin
-              </button>
-              <button v-else-if="item.status === 'auth_required'" class="btn-ghost !py-1.5 !px-3"
-                      @click="openLogin(item.registry)">
-                <Icon name="lock" :size="14" /> Log in
-              </button>
+              <UpdateAction
+                :item="item" :busy="busy" :applying-all="applyingAll"
+                @apply="applyOne(item)" @login="openLogin(item.registry)"
+              />
             </td>
           </tr>
         </tbody>

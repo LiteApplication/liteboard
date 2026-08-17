@@ -4,8 +4,14 @@
 
 @layer base {
   html, body, #app { height: 100%; }
+  html {
+    /* Stop iOS from re-flowing text when the device is rotated. */
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-canvas text-slate-200 font-sans antialiased;
+    /* Standalone (installed) mode: no rubber-band / pull-to-refresh. */
+    overscroll-behavior-y: none;
     background-image:
       radial-gradient(1200px 600px at 15% -10%, rgba(45, 212, 191, 0.08), transparent 60%),
       radial-gradient(1000px 500px at 100% 0%, rgba(96, 165, 250, 0.06), transparent 55%);
@@ -14,6 +20,13 @@
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
   ::-webkit-scrollbar-track { background: transparent; }
+
+  a, button, [role='button'] { -webkit-tap-highlight-color: transparent; }
+
+  /* Anything under 16px makes iOS Safari zoom the viewport on focus. */
+  @media (max-width: 640px) {
+    input, select, textarea { font-size: 16px; }
+  }
 }
 
 @layer components {
@@ -36,6 +49,30 @@
   .btn-ghost {
     @apply btn bg-surface-2 text-slate-300 border border-border hover:border-accent/40 hover:text-white;
   }
-  .stat-value { @apply text-3xl font-semibold tracking-tight tabular-nums; }
+  /* Touch pointers need a bigger hit area than a mouse does. */
+  @media (pointer: coarse) {
+    .btn { @apply min-h-[42px]; }
+  }
+  .stat-value { @apply text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums; }
   .label { @apply text-xs uppercase tracking-wider text-slate-500 font-medium; }
+
+  /* Standard page gutter: tight on phones, roomy on desktop. */
+  .page { @apply px-4 py-5 sm:px-6 sm:py-6 lg:px-8 lg:py-8; }
+}
+
+/* Notch / home-indicator padding.
+   Deliberately outside @layer: each of these is combined with a Tailwind
+   padding utility of equal specificity, and equal ties break on source order —
+   so they have to come last in the file. env() carries a 0px fallback for
+   browsers without safe-area support. */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pl-safe { padding-left: env(safe-area-inset-left, 0px); }
+.pr-safe { padding-right: env(safe-area-inset-right, 0px); }
+
+/* Bottom padding for a sheet-style modal: gutter + home-indicator inset while
+   it's docked to the bottom edge, plain dialog padding once it re-centres. */
+.pb-sheet { padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 640px) {
+  .pb-sheet { padding-bottom: 1.5rem; }
 }

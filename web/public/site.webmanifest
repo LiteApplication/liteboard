@@ -1,8 +1,46 @@
 {
-  "name": "LiteBoard",
+  "id": "/",
+  "name": "LiteBoard — Swarm Dashboard",
   "short_name": "LiteBoard",
-  "icons": [{ "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" }],
+  "description": "Docker Swarm health & operations dashboard: service health, image updates, live node metrics and overlay fabric diagnostics.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "theme_color": "#0a0e14",
   "background_color": "#0a0e14",
-  "display": "standalone"
+  "categories": ["productivity", "utilities", "developer"],
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
+    { "src": "/icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Overview",
+      "short_name": "Overview",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Updates",
+      "short_name": "Updates",
+      "url": "/updates",
+      "icons": [{ "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Nodes",
+      "short_name": "Nodes",
+      "url": "/nodes",
+      "icons": [{ "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Networks",
+      "short_name": "Networks",
+      "url": "/networks",
+      "icons": [{ "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" }]
+    }
+  ]
 }

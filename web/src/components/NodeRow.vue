@@ -36,7 +36,7 @@ const detail = computed(() => {
     </div>
 
     <div class="flex-1 min-w-0">
-      <div class="flex items-center gap-2.5">
+      <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         <span class="font-medium text-slate-100 truncate">{{ node.hostname || node.id.slice(0, 12) }}</span>
         <span
           class="pill ring-1"
@@ -49,10 +49,10 @@ const detail = computed(() => {
         </span>
         <Icon v-if="node.leader" name="crown" :size="13" class="text-degraded" title="Leader" />
       </div>
-      <div class="text-xs text-slate-500 truncate mt-1">{{ detail }}</div>
+      <div class="text-xs text-slate-500 mt-1 line-clamp-2 sm:truncate">{{ detail }}</div>
     </div>
 
-    <div class="text-right">
+    <div class="text-right shrink-0">
       <div class="text-sm font-medium text-slate-300 capitalize">{{ node.role }}</div>
       <div class="label">node</div>
     </div>

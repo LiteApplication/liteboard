@@ -44,10 +44,14 @@ async function copy(text, key) {
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm
+           p-0 sm:items-center sm:p-4"
     @click.self="emit('close')"
   >
-    <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+    <div
+      class="card w-full max-w-2xl max-h-[92vh] sm:max-h-[90vh] overflow-y-auto
+             p-4 pb-sheet sm:p-6 rounded-b-none sm:rounded-2xl"
+    >
       <div class="flex items-start justify-between mb-1">
         <div>
           <h2 class="text-base font-semibold text-slate-100">Add a node</h2>
@@ -67,7 +71,7 @@ async function copy(text, key) {
 
       <template v-else>
         <!-- role toggle -->
-        <div class="mt-5 flex items-center gap-2">
+        <div class="mt-5 flex flex-wrap items-center gap-2">
           <button
             class="pill border"
             :class="role === 'worker' ? 'border-accent/50 text-accent bg-accent/10' : 'border-border text-slate-400'"
@@ -78,7 +82,7 @@ async function copy(text, key) {
             :class="role === 'manager' ? 'border-accent/50 text-accent bg-accent/10' : 'border-border text-slate-400'"
             @click="role = 'manager'"
           >Manager</button>
-          <span v-if="role === 'manager'" class="text-xs text-degraded ml-1">
+          <span v-if="role === 'manager'" class="text-xs text-degraded ml-1 basis-full sm:basis-auto">
             grants full cluster control — only for trusted hosts
           </span>
         </div>

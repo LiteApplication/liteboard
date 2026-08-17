@@ -50,11 +50,11 @@ async function pruneImages() {
 </script>
 
 <template>
-  <div class="card p-5 animate-fadeUp" :class="reachable ? 'card-hover' : 'opacity-70'">
-    <div class="flex items-start justify-between mb-4">
-      <div>
+  <div class="card p-4 sm:p-5 animate-fadeUp" :class="reachable ? 'card-hover' : 'opacity-70'">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <span class="font-semibold text-slate-100">{{ node.hostname }}</span>
+          <span class="font-semibold text-slate-100 truncate">{{ node.hostname }}</span>
           <Icon v-if="node.leader" name="crown" :size="14" class="text-degraded" title="Leader" />
         </div>
         <div class="flex items-center gap-2 mt-1">
@@ -64,7 +64,7 @@ async function pruneImages() {
           </span>
         </div>
       </div>
-      <div class="text-right">
+      <div class="text-right shrink-0">
         <span class="pill" :class="reachable ? 'bg-healthy/15 text-healthy' : 'bg-critical/15 text-critical'">
           <span class="w-1.5 h-1.5 rounded-full" :class="reachable ? 'bg-healthy animate-pulseGlow' : 'bg-critical'" />
           {{ reachable ? 'daemon up' : 'unreachable' }}

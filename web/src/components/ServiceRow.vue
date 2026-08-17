@@ -58,8 +58,11 @@ async function clearRollout() {
 </script>
 
 <template>
+  <!-- Phones stack the stats under the service info; from sm up they sit
+       alongside it as before. -->
   <div
-    class="card card-hover p-4 flex items-center gap-4 animate-fadeUp cursor-pointer"
+    class="card card-hover p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4
+           animate-fadeUp cursor-pointer"
     @click="showDetail = true"
   >
     <div class="flex-1 min-w-0">
@@ -76,7 +79,7 @@ async function clearRollout() {
         <span v-if="s.last_exit_code != null" class="text-slate-500">(exit {{ s.last_exit_code }})</span>
       </div>
       <div v-if="s.transitioning && s.transitioning.length > 0" class="mt-2 space-y-1">
-        <div v-for="t in s.transitioning" :key="t.slot || t.node_id" class="flex items-center gap-2 text-xs text-slate-400">
+        <div v-for="t in s.transitioning" :key="t.slot || t.node_id" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
           <Icon name="refresh" :size="12" class="animate-spin text-accent" />
           <span class="font-medium text-slate-300">
             Task {{ s.mode === 'global' ? `(Node: ${nodeName(t.node_id)})` : `#${t.slot}` }}:
@@ -90,7 +93,7 @@ async function clearRollout() {
         <Icon name="pause" :size="12" class="text-degraded mt-0.5 shrink-0" />
         <div class="min-w-0">
           <span class="text-degraded font-medium">
-            Rollout paused<span v-if="ago(s.rollout.started_at)"> {{ ago(s.rollout.started_at) }} ago</span>
+            Rollout paused<span v-if="ago(s.rollout.started_at)">&nbsp;{{ ago(s.rollout.started_at) }} ago</span>
           </span>
           <span v-if="s.rollout.message" class="text-slate-500"> — {{ s.rollout.message }}</span>
         </div>
@@ -111,26 +114,32 @@ async function clearRollout() {
       </div>
     </div>
 
-    <div v-if="s.recent_failures" class="text-center px-2">
-      <div class="text-lg font-semibold text-critical tabular-nums">{{ s.recent_failures }}</div>
-      <div class="label">fails/10m</div>
-    </div>
-
-    <div class="text-right">
-      <div class="text-xl font-semibold tabular-nums" :class="replicaBad ? 'text-degraded' : 'text-slate-200'">
-        {{ replicaText }}
-      </div>
-      <div class="label">{{ s.mode === 'global' ? 'global' : 'replicas' }}</div>
-    </div>
-
-    <button
-      class="shrink-0 p-2 rounded-lg text-slate-500 hover:text-accent hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed"
-      :title="`Redeploy ${s.name}`"
-      :disabled="redeploying"
-      @click.stop="redeploy"
+    <div
+      class="flex items-center justify-end gap-4 shrink-0
+             border-t border-border/40 pt-3 sm:border-0 sm:pt-0"
     >
-      <Icon name="redeploy" :size="16" :class="redeploying && 'animate-spin'" />
-    </button>
+      <div v-if="s.recent_failures" class="text-center px-2">
+        <div class="text-lg font-semibold text-critical tabular-nums">{{ s.recent_failures }}</div>
+        <div class="label">fails/10m</div>
+      </div>
+
+      <div class="text-right">
+        <div class="text-xl font-semibold tabular-nums" :class="replicaBad ? 'text-degraded' : 'text-slate-200'">
+          {{ replicaText }}
+        </div>
+        <div class="label">{{ s.mode === 'global' ? 'global' : 'replicas' }}</div>
+      </div>
+
+      <button
+        class="shrink-0 p-2.5 -m-0.5 rounded-lg text-slate-500 hover:text-accent hover:bg-accent/10 disabled:opacity-50 disabled:cursor-not-allowed"
+        :title="`Redeploy ${s.name}`"
+        :aria-label="`Redeploy ${s.name}`"
+        :disabled="redeploying"
+        @click.stop="redeploy"
+      >
+        <Icon name="redeploy" :size="16" :class="redeploying && 'animate-spin'" />
+      </button>
+    </div>
   </div>
 
   <ServiceDetailModal v-if="showDetail" :service="s" @close="showDetail = false" />

@@ -86,15 +86,19 @@ onMounted(loadEntries)
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm
+           p-0 sm:items-center sm:p-4"
     @click.self="emit('close')"
   >
-    <div class="card w-full max-w-lg p-6 relative">
+    <div
+      class="card w-full max-w-lg relative max-h-[92vh] sm:max-h-[90vh] overflow-y-auto
+             p-4 pb-sheet sm:p-6 rounded-b-none sm:rounded-2xl"
+    >
       <button class="absolute top-4 right-4 text-slate-500 hover:text-white p-1" @click="emit('close')">
         <Icon name="close" :size="18" />
       </button>
 
-      <div>
+      <div class="pr-8">
         <h2 class="text-base font-semibold text-slate-100">Registry Logins</h2>
         <p class="text-xs text-slate-500 mt-0.5">
           Credentials LiteBoard uses to fetch manifest digests for private repositories.

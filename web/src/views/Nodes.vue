@@ -21,11 +21,11 @@ const showAddNode = ref(false)
 
   <AddNodeModal v-if="showAddNode" @close="showAddNode = false" />
 
-  <div class="p-8">
+  <div class="page">
     <div v-if="!store.nodes.length" class="text-center py-16 text-slate-500">
       <Icon name="server" :size="28" class="mx-auto mb-3 opacity-60" /> Discovering nodes…
     </div>
-    <div v-else class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+    <div v-else class="grid gap-4 sm:gap-5 md:grid-cols-2 xl:grid-cols-3">
       <NodeCard v-for="entry in store.nodes" :key="entry.node.id" :entry="entry" />
     </div>
   </div>

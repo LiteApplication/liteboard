@@ -74,13 +74,44 @@ async function doLogout() {
     </div>
   </div>
 
-  <div v-else-if="isBare" class="h-full">
+  <!-- Login/Setup: full-screen and scrollable, so a short viewport (phone in
+       landscape, keyboard open) can still reach the bottom of the form. -->
+  <div v-else-if="isBare" class="h-full overflow-y-auto pl-safe pr-safe">
     <router-view />
   </div>
 
-  <div v-else class="h-full flex">
-    <!-- Sidebar -->
-    <aside class="w-60 shrink-0 border-r border-border/60 bg-surface/40 backdrop-blur-md flex flex-col">
+  <!-- Shell: sidebar + content on desktop; top bar + content + tab bar on mobile.
+       pl/pr-safe keeps everything clear of a landscape notch. -->
+  <div v-else class="h-full flex flex-col lg:flex-row pl-safe pr-safe">
+    <!-- Mobile top bar (identity + session; navigation lives in the tab bar) -->
+    <header
+      class="lg:hidden shrink-0 min-h-14 pt-safe flex items-center gap-3 px-4
+             border-b border-border/60 bg-surface/60 backdrop-blur-md"
+    >
+      <img src="/favicon.svg" alt="" class="w-7 h-7" />
+      <div class="font-semibold tracking-tight text-slate-100 leading-none">LiteBoard</div>
+      <span
+        class="w-2 h-2 rounded-full shrink-0"
+        :class="store.connected ? 'bg-healthy animate-pulseGlow' : 'bg-slate-600'"
+        :title="store.connected ? 'live' : 'connecting…'"
+      />
+      <div v-if="user" class="ml-auto flex items-center gap-2">
+        <div class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center text-sm font-semibold">
+          {{ (user.name || user.email || '?')[0]?.toUpperCase() }}
+        </div>
+        <button
+          @click="doLogout"
+          class="p-2 -mr-2 text-slate-500 hover:text-critical active:text-critical transition"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <Icon name="logout" :size="18" />
+        </button>
+      </div>
+    </header>
+
+    <!-- Sidebar (desktop only) -->
+    <aside class="hidden lg:flex w-60 shrink-0 border-r border-border/60 bg-surface/40 backdrop-blur-md flex-col">
       <div class="px-5 h-16 flex items-center gap-3 border-b border-border/60">
         <img src="/favicon.svg" alt="" class="w-8 h-8" />
         <div>
@@ -128,8 +159,32 @@ async function doLogout() {
     </aside>
 
     <!-- Main -->
-    <main class="flex-1 overflow-y-auto">
+    <main class="flex-1 min-h-0 overflow-y-auto">
       <router-view v-if="ready" />
     </main>
+
+    <!-- Mobile tab bar -->
+    <nav
+      class="lg:hidden shrink-0 pb-safe border-t border-border/60 bg-surface/80 backdrop-blur-md"
+    >
+      <div class="grid grid-cols-4">
+        <router-link
+          v-for="item in navItems" :key="item.name" :to="item.to"
+          class="relative flex flex-col items-center justify-center gap-1 py-2.5 min-h-[56px]
+                 text-[11px] text-slate-500 transition"
+          :class="route.name === item.name ? 'text-accent' : 'active:text-slate-300'"
+        >
+          <span class="relative">
+            <Icon :name="item.icon" :size="20" />
+            <span
+              v-if="item.name === 'overview' && store.overview && badCount > 0"
+              class="absolute -top-1 -right-2 min-w-[15px] h-[15px] px-1 rounded-full
+                     bg-critical text-canvas text-[10px] font-semibold leading-[15px] text-center"
+            >{{ badCount }}</span>
+          </span>
+          {{ item.label }}
+        </router-link>
+      </div>
+    </nav>
   </div>
 </template>
