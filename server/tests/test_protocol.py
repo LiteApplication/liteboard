@@ -30,9 +30,9 @@ def test_verify_rejects_tampered_path(keypair):
 
 def test_verify_rejects_tampered_body(keypair):
     priv, pub = keypair
-    headers = protocol.sign_request(priv, "POST", "/update", b"real").as_dict()
+    headers = protocol.sign_request(priv, "POST", "/fabric/repair", b"real").as_dict()
     with pytest.raises(protocol.VerificationError):
-        protocol.verify_request(pub, "POST", "/update", headers, b"forged")
+        protocol.verify_request(pub, "POST", "/fabric/repair", headers, b"forged")
 
 
 def test_verify_rejects_wrong_key(keypair):

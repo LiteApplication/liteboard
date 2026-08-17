@@ -49,8 +49,6 @@ export const api = {
   fabric: () => request('/api/fabric'),
   repairFabric: (payload) =>
     request('/api/fabric/repair', { method: 'POST', body: JSON.stringify(payload) }),
-  daemonVersion: () => request('/api/daemons/version'),
-  pushDaemonUpdate: () => request('/api/daemons/push-update', { method: 'POST' }),
   registryLogin: (payload) => request('/api/registry/login', { method: 'POST', body: JSON.stringify(payload) }),
   registryList: () => request('/api/registry/list'),
   registryLogout: (registry) => request(`/api/registry/${encodeURIComponent(registry)}`, { method: 'DELETE' }),

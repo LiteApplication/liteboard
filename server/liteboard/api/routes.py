@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..auth.oidc import require_user
-from ..daemon_dist import bundle as daemon_bundle
 from ..dockersvc import health, redeploys, swarm, updates
 from ..nodes.fabric import analyze_fabric
 from ..nodes.networks import analyze_networks
@@ -178,10 +177,8 @@ async def nodes():
 
 @router.get("/nodes/join-info")
 async def nodes_join_info():
-    """Swarm join tokens + daemon version, for bootstrapping a new node."""
-    info = await asyncio.to_thread(swarm.join_info)
-    info["daemon_version"] = daemon_bundle.daemon_version()
-    return info
+    """Swarm join tokens, for bootstrapping a new node."""
+    return await asyncio.to_thread(swarm.join_info)
 
 
 @router.post("/nodes/images/refresh")
@@ -254,19 +251,6 @@ async def fabric_repair(req: FabricRepairRequest):
     # reflects the repair instead of the cached pre-repair reading.
     await state.collector.poll_once(force_fabric=True)
     return {"ok": True, **result}
-
-
-@router.get("/daemons/version")
-async def daemon_version():
-    return {"server_bundle_version": daemon_bundle.daemon_version()}
-
-
-@router.post("/daemons/push-update")
-async def push_update():
-    state = get_state()
-    bundle = daemon_bundle.build_bundle(state.signer)
-    results = await state.collector.push_update(bundle)
-    return {"ok": True, "version": bundle["version"], "results": results}
 
 
 @router.get("/stream")

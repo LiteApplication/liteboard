@@ -115,10 +115,9 @@ async function copy(text, key) {
 
         <p class="mt-5 text-xs text-slate-500 leading-relaxed">
           Once the node joins, the <span class="text-slate-300">global</span> daemon service
-          starts on it within seconds and appears here. If the daemon image isn't reachable
-          from the new host, or you want the newest build, use
-          <span class="text-slate-300">Update daemons</span> to push the current signed
-          bundle (v{{ info.daemon_version }}).
+          starts on it within seconds and appears here — Swarm pulls the daemon image onto
+          the new host automatically. If it doesn't appear, check that the host can reach
+          the registry the daemon image is published on.
         </p>
       </template>
     </div>

@@ -1,13 +1,11 @@
 """Server-side request signer.
 
 Holds the single Ed25519 private key (loaded from the Docker secret) and signs
-outbound requests to node daemons, plus signs daemon self-update bundles.
+outbound requests to node daemons.
 """
 
 from __future__ import annotations
 
-import base64
-import json
 import os
 from pathlib import Path
 
@@ -30,20 +28,6 @@ class Signer:
         )
         return signed.as_dict()
 
-    def sign_bundle(self, version: str, files: dict[str, str]) -> dict:
-        """Produce a self-update bundle signed with the server private key.
-
-        ``files`` maps filename -> base64(file bytes). Must match the daemon's
-        ``selfupdate._canonical_bundle_bytes`` exactly.
-        """
-        payload = {
-            "version": version,
-            "files": {name: files[name] for name in sorted(files)},
-        }
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        signature = protocol.b64encode(self._priv.sign(canonical))
-        return {"version": version, "files": payload["files"], "signature": signature}
-
 
 def generate_signing_key(path: str | Path) -> str:
     """Generate a stable Ed25519 keypair, persist the private seed, return pubkey.
@@ -65,14 +49,3 @@ def generate_signing_key(path: str | Path) -> str:
         fh.write(protocol.b64encode(seed))
     os.chmod(path, 0o600)
     return protocol.public_key_b64(priv)
-
-
-def bundle_files_b64(source_dir: str, names: list[str]) -> dict[str, str]:
-    """Read daemon source files and base64-encode them for a bundle."""
-    import os
-
-    out: dict[str, str] = {}
-    for name in names:
-        with open(os.path.join(source_dir, name), "rb") as fh:
-            out[name] = base64.b64encode(fh.read()).decode()
-    return out

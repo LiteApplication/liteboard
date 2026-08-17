@@ -33,13 +33,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 import fabric
 import images
 import protocol
-import selfupdate
 from metrics import MetricsCollector
 from netinspect import inspect_networks
 
-VERSION = "1.2.0"
+VERSION = "2.0.0"
 
-INSTALL_DIR = os.path.dirname(os.path.abspath(__file__))
 DOCKER_SOCK = os.environ.get("LITEBOARD_DOCKER_SOCK", "/var/run/docker.sock")
 MAX_SKEW = int(os.environ.get("LITEBOARD_MAX_SKEW", protocol.DEFAULT_MAX_SKEW))
 
@@ -145,9 +143,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authed(body):
             return
         if route == "/version":
-            self._send_json(
-                200, {"version": VERSION, "key_id": DAEMON.key_id, "install_dir": INSTALL_DIR}
-            )
+            self._send_json(200, {"version": VERSION, "key_id": DAEMON.key_id})
         elif route == "/metrics":
             self._send_json(200, DAEMON.metrics.snapshot().as_dict())
         elif route == "/networks":
@@ -169,9 +165,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self._read_body()
         if not self._authed(body):
             return
-        if route == "/update":
-            self._handle_update(body)
-        elif route == "/images/prune":
+        if route == "/images/prune":
             job_id = images.start_prune(DOCKER_SOCK)
             self._send_json(202, {"job_id": job_id})
         elif route == "/fabric/repair":
@@ -192,29 +186,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         result = fabric.repair(action, payload.get("params") or {})
         self._send_json(500 if "error" in result else 200, result)
-
-    def _handle_update(self, body: bytes) -> None:
-        try:
-            bundle = json.loads(body)
-        except json.JSONDecodeError:
-            self._send_json(400, {"error": "invalid json"})
-            return
-        try:
-            new_version = selfupdate.apply_bundle(DAEMON.pubkey, bundle, INSTALL_DIR)
-        except protocol.VerificationError as exc:
-            self._send_json(400, {"error": str(exc)})
-            return
-        if new_version == VERSION:
-            self._send_json(200, {"updated": False, "version": VERSION})
-            return
-        self._send_json(200, {"updated": True, "version": new_version, "restarting": True})
-        # Flush the response, then re-exec into the new code.
-        try:
-            self.wfile.flush()
-        except OSError:
-            pass
-        threading.Timer(0.5, selfupdate.restart).start()
-
 
 def main() -> None:
     bind = os.environ.get("LITEBOARD_DAEMON_BIND", "0.0.0.0")

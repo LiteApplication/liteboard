@@ -49,7 +49,7 @@ Repair buttons are offered **only** where the fix is targeted and non-disruptive
 that would restart a daemon or rebuild a network is reported with guidance instead, never
 wired to a button.
 
-Metrics and network data come from a small **Python daemon** that runs on every node. The server reaches out to each daemon, and **every request is cryptographically signed** so nothing but your server can talk to them. Daemons can **self-update** — but only from bundles signed by your server's key.
+Metrics and network data come from a small **Python daemon** that runs on every node. The server reaches out to each daemon, and **every request is cryptographically signed** so nothing but your server can talk to them.
 
 ## Architecture
 
@@ -78,7 +78,7 @@ Metrics and network data come from a small **Python daemon** that runs on every 
 
 - A **single stable Ed25519 keypair**. The **private** key is a Docker secret held only by the server. The **public** key is handed to every daemon via its environment.
 - Each request the server makes to a daemon is signed over `method + path + timestamp + nonce + body-hash`. Daemons reject anything with a bad signature, a stale timestamp, or a replayed nonce.
-- **Self-update** pushes a daemon bundle whose payload is *also* Ed25519-signed; the daemon verifies it against the same public key before atomically replacing itself. There is no unauthenticated update path.
+- **Daemons are updated like any other service** — by rolling out a new image. The daemon exposes no code-update path at all, so there is nothing there to abuse.
 
 ---
 
@@ -129,8 +129,7 @@ Open `https://<liteboard-host>` — you'll land on the **setup wizard**. Enter t
 1. After the wizard, you're redirected to Authentik → sign in → the dashboard loads.
 2. **Overview** shows your services; deliberately break one (`docker service scale <svc>=0`) and watch it flag.
 3. **Nodes** shows a live gauge card per node with a green *daemon up* badge (daemons flip from *unprovisioned* to up once keyed).
-4. **Nodes → Update daemons** pushes a signed self-update; the reported version bumps.
-5. **Networks** reports *fabric intact* (or lists real faults). If it shows a
+4. **Networks** reports *fabric intact* (or lists real faults). If it shows a
    "Limited visibility" panel, the daemon is missing `SYS_ADMIN`/`NET_ADMIN` or the
    `/run/docker/netns` mount — see below.
 
@@ -205,7 +204,8 @@ offline with `make keygen` if you want to pin it yourself.
   Signatures already prevent unauthorized use, but least-exposure is still best.
 - **Daemon capabilities:** the fabric probes need `SYS_ADMIN` (to enter a network
   namespace) and `NET_ADMIN` (to read and repair forwarding entries), granted in
-  `docker-compose.yml`. Removing both is supported and non-fatal — the daemon keeps
+  `docker-compose.yml`, plus a bind mount of `/proc/1/ns/net` — reading the host
+  namespace out of the mounted procfs instead would require `CAP_SYS_PTRACE`. Removing both is supported and non-fatal — the daemon keeps
   running and the Docker-API checks keep working; only the namespace probes go dark,
   which the UI reports rather than passing off as health. Repairs are reachable only
   over the same signed, replay-protected channel as everything else, accept a fixed
@@ -218,7 +218,7 @@ offline with `make keygen` if you want to pin it yourself.
 
 ```
 server/   FastAPI app, docker-py, OIDC, registry checks, signer, node collector
-daemon/   the per-node Python daemon (metrics, netinspect, self-update)
+daemon/   the per-node Python daemon (metrics, netinspect, fabric probes)
 web/       Vue 3 + Vite + Tailwind SPA (+ custom favicon)
 scripts/   keygen
 docker-compose.yml   the Swarm stack

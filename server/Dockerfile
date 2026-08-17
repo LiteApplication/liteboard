@@ -16,14 +16,8 @@ WORKDIR /app
 COPY server/pyproject.toml ./
 COPY server/liteboard ./liteboard
 # Installs declared dependencies (and the package) into site-packages. At
-# runtime we import from /app/liteboard (cwd), which also carries the daemon
-# source added below.
+# runtime we import from /app/liteboard (cwd).
 RUN pip install --no-cache-dir .
-
-# Ship the canonical daemon source so the server can serve signed self-updates.
-COPY daemon/liteboard_daemon.py daemon/protocol.py daemon/metrics.py \
-     daemon/netinspect.py daemon/selfupdate.py daemon/dockerapi.py daemon/images.py \
-     ./liteboard/daemon_dist/src/
 
 # Built SPA served as static files.
 COPY --from=web /web/dist ./static

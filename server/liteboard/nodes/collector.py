@@ -198,29 +198,6 @@ class NodeCollector:
         async with self._lock:
             return list(self._nodes)
 
-    async def push_update(self, bundle: dict) -> list[dict]:
-        """POST a signed self-update bundle to every reachable daemon."""
-        import json
-
-        nodes = await self.nodes()
-        body = json.dumps(bundle).encode()
-        headers = self._signer.sign_headers("POST", "/update", body)
-        headers["Content-Type"] = "application/json"
-        results = []
-        async with httpx.AsyncClient(timeout=self._settings.daemon_timeout) as client:
-            for node in nodes:
-                url = self._daemon_url(node, "/update")
-                if not url:
-                    continue
-                try:
-                    resp = await client.post(url, content=body, headers=headers)
-                    results.append(
-                        {"node": node["hostname"], "status": resp.status_code, "body": resp.json()}
-                    )
-                except httpx.HTTPError as exc:
-                    results.append({"node": node["hostname"], "error": str(exc)})
-        return results
-
     async def prune_images(self, node_id: str) -> dict:
         """Start an unused-image cleanup job on a node's daemon.
 
